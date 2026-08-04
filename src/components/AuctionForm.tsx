@@ -14,6 +14,8 @@ import {
   accessoryBonus,
   adjustSuggestions,
   analyzeAuction,
+  opportunityVerdict,
+  opportunityZones,
   CATEGORIES,
   CATEGORY_LABELS,
   CONDITIONS,
@@ -74,11 +76,24 @@ export function AuctionForm({
         : products.filter((p) => matchesTitle(values.title, p.name, p.aliases)).slice(0, 3),
     [products, values.title, values.productId]
   );
-  const knownStats = useMemo(() => {
-    if (!linkedProduct) return null;
-    const obs = allObservations().filter((o) => o.productId === linkedProduct.id);
-    return productStats(obs);
-  }, [linkedProduct]);
+  const knownObs = useMemo(
+    () =>
+      linkedProduct
+        ? allObservations().filter(
+            (o) => o.productId === linkedProduct.id && !o.rejected
+          )
+        : [],
+    [linkedProduct]
+  );
+  const knownStats = useMemo(
+    () => (linkedProduct ? productStats(knownObs) : null),
+    [linkedProduct, knownObs]
+  );
+  const zones = useMemo(() => opportunityZones(knownObs), [knownObs]);
+  const zoneVerdict =
+    zones && values.currentPrice > 0
+      ? opportunityVerdict(values.currentPrice, zones)
+      : null;
   // Équipements inclus dans ce lot → plus-value sur les prix suggérés.
   const included = values.accessoriesIncluded ?? [];
   const bonus = linkedProduct
@@ -294,6 +309,29 @@ export function AuctionForm({
                   {bonus > 0 && (
                     <p className="text-xs text-positive pt-1 border-t border-edge">
                       Plus-value des équipements inclus : +{bonus} €
+                    </p>
+                  )}
+                </div>
+              )}
+              {zones && (
+                <div
+                  className={`rounded-lg border p-3 text-sm ${
+                    zoneVerdict?.level === "excellent"
+                      ? "border-positive/40 bg-positive/5"
+                      : zoneVerdict?.level === "faible"
+                        ? "border-negative/40 bg-negative/5"
+                        : "border-edge bg-surface-2"
+                  }`}
+                >
+                  <p>
+                    🎯 <b>Prix d&apos;opportunité :</b> excellente affaire sous{" "}
+                    <b>{euro(zones.opportunityPrice)}</b>, intéressant
+                    jusqu&apos;à <b>{euro(zones.fairPrice)}</b>
+                  </p>
+                  {zoneVerdict && (
+                    <p className="mt-1 font-medium">
+                      Au prix actuel ({euro(values.currentPrice)}) :{" "}
+                      {zoneVerdict.label}
                     </p>
                   )}
                 </div>

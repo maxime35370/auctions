@@ -114,6 +114,44 @@ describe("importer — conversion en brouillon", () => {
   });
 });
 
+describe("extractMarketListings — 📊 étude de marché", () => {
+  const ebayPage = `
+    eBay - canon 100-400 ii - ventes réussies
+    Canon EF 100-400mm f/4.5-5.6L IS II USM
+    1 320,00 €
+    +12,00 € livraison
+    Canon EF 100-400 L IS II USM très bon état
+    1 410,00 €
+    Livraison gratuite
+    Objectif Canon 100-400 mark II
+    1 180 €
+    Canon EF 100-400mm II (pour pièces)
+    650,00 €
+  `;
+
+  it("extrait toutes les annonces avec leur contexte, sans les frais de port", async () => {
+    const { extractMarketListings } = await import("../market");
+    const listings = extractMarketListings(ebayPage);
+    expect(listings.map((l) => l.price)).toEqual([1320, 1410, 1180, 650]);
+    expect(listings[0].context).toContain("Canon EF 100-400mm");
+  });
+
+  it("résume le marché : compte, bornes, médiane et prix d'opportunité", async () => {
+    const { extractMarketListings, summarizeMarket } = await import("../market");
+    const s = summarizeMarket(extractMarketListings(ebayPage))!;
+    expect(s.count).toBe(4);
+    expect(s.min).toBe(650);
+    expect(s.max).toBe(1410);
+    expect(s.opportunity).toBeLessThan(s.median);
+  });
+
+  it("déduplique les prix répétés au même contexte", async () => {
+    const { extractMarketListings } = await import("../market");
+    const listings = extractMarketListings("Canon truc machin\n100 €\nCanon truc machin\n100 €");
+    expect(listings).toHaveLength(1);
+  });
+});
+
 describe("mergeData — fusion des sources", () => {
   it("la première valeur définie gagne, les vides sont ignorés", () => {
     const merged = mergeData(

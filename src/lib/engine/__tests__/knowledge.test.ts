@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   accessoryBonus,
   adjustSuggestions,
+  averageSaleDelay,
   computeConfidence,
   computeTrend,
   marketIndex,
   matchesTitle,
+  myVsMarket,
+  opportunityVerdict,
+  opportunityZones,
+  priceStability,
   productStats,
   type ObservationInput,
 } from "../knowledge";
@@ -111,6 +116,86 @@ describe("computeConfidence — indice de confiance justifié", () => {
     );
     expect(confidence).toBeLessThan(50);
     expect(reasons.join(" ")).toContain("anciennes");
+  });
+});
+
+describe("opportunityZones — 🎯 prix d'opportunité", () => {
+  const auctions = [800, 850, 900, 950, 1000, 1050, 1100, 1150, 1200].map(
+    (price, i) => obs(`2026-0${(i % 6) + 1}-10`, price, "enchere")
+  );
+
+  it("calcule les zones sur les adjudications quand il y en a assez", () => {
+    const zones = opportunityZones(auctions)!;
+    expect(zones.basis).toBe("adjudications");
+    expect(zones.opportunityPrice).toBeLessThan(zones.fairPrice);
+    expect(zones.opportunityPrice).toBeCloseTo(860, 0); // p15 de 800→1200
+  });
+
+  it("positionne un prix d'achat dans les zones", () => {
+    const zones = opportunityZones(auctions)!;
+    expect(opportunityVerdict(820, zones).level).toBe("excellent");
+    expect(opportunityVerdict(940, zones).level).toBe("interessant"); // p15=860 < 940 ≤ p40=960
+    expect(opportunityVerdict(1300, zones).level).toBe("faible");
+  });
+
+  it("renvoie undefined avec moins de 3 observations", () => {
+    expect(opportunityZones([obs("2026-01-01", 100)])).toBeUndefined();
+  });
+});
+
+describe("priceStability — écart-type et stabilité", () => {
+  it("qualifie un marché stable", () => {
+    const s = priceStability([
+      obs("2026-01-01", 100),
+      obs("2026-02-01", 102),
+      obs("2026-03-01", 98),
+    ])!;
+    expect(s.label).toBe("stable");
+    expect(s.cvPct).toBeLessThan(15);
+  });
+
+  it("qualifie un marché très variable", () => {
+    const s = priceStability([
+      obs("2026-01-01", 100),
+      obs("2026-02-01", 300),
+      obs("2026-03-01", 60),
+    ])!;
+    expect(s.label).toBe("tres-variable");
+  });
+});
+
+describe("myVsMarket — mes performances contre le marché", () => {
+  it("« je revends 12 % plus cher que la moyenne »", () => {
+    const r = myVsMarket([
+      { ...obs("2026-05-01", 1120), source: "moi" },
+      { ...obs("2026-03-01", 1000), source: "leboncoin" },
+      { ...obs("2026-04-01", 1000), source: "ebay" },
+    ])!;
+    expect(r.diffPct).toBe(12);
+    expect(r.mySaleCount).toBe(1);
+  });
+
+  it("undefined sans ventes personnelles ou marché insuffisant", () => {
+    expect(myVsMarket([{ ...obs("2026-05-01", 1120), source: "moi" }])).toBeUndefined();
+  });
+});
+
+describe("averageSaleDelay — ⚡ temps moyen de revente", () => {
+  it("mesure le délai adjudication → vente de mes transactions", () => {
+    const r = averageSaleDelay([
+      { ...obs("2026-05-01", 900, "enchere"), auctionId: "a1", source: "moi" },
+      { ...obs("2026-05-05", 1300, "vente"), auctionId: "a1", source: "moi" },
+      { ...obs("2026-06-01", 900, "enchere"), auctionId: "a2", source: "moi" },
+      { ...obs("2026-06-09", 1250, "vente"), auctionId: "a2", source: "moi" },
+    ])!;
+    expect(r.avgDays).toBe(6); // (4 + 8) / 2
+    expect(r.count).toBe(2);
+  });
+
+  it("undefined sans paire complète", () => {
+    expect(
+      averageSaleDelay([{ ...obs("2026-05-01", 900, "enchere"), auctionId: "a1" }])
+    ).toBeUndefined();
   });
 });
 

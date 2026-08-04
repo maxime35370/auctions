@@ -9,8 +9,12 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  averageSaleDelay,
   CATEGORIES,
   CATEGORY_LABELS,
+  myVsMarket,
+  opportunityZones,
+  priceStability,
   productStats,
   type Category,
 } from "@/lib/engine";
@@ -23,6 +27,9 @@ import {
   listObservations,
   OBSERVATION_KINDS,
   OBSERVATION_SOURCES,
+  REJECT_REASONS,
+  rejectObservation,
+  restoreObservation,
   saveProduct,
   type AuctionRecord,
   type Observation,
@@ -31,6 +38,7 @@ import {
 } from "@/lib/storage";
 import { dateFr, euro } from "@/lib/format";
 import { PriceChart } from "@/components/PriceChart";
+import { MarketStudy } from "@/components/MarketStudy";
 import { ConfidenceBadge, Trend } from "@/components/KnowledgeBadges";
 import { ScoreStars } from "@/components/ScoreStars";
 
@@ -75,7 +83,13 @@ function ObjetContent() {
     );
   }
 
-  const stats = productStats(observations);
+  // Les observations rejetées sont conservées mais exclues des calculs.
+  const active = observations.filter((o) => !o.rejected);
+  const stats = productStats(active);
+  const zones = opportunityZones(active);
+  const stability = priceStability(active);
+  const performance = myVsMarket(active);
+  const saleDelay = averageSaleDelay(active);
 
   function handleDelete() {
     if (!product) return;
@@ -129,6 +143,77 @@ function ObjetContent() {
         />
       </div>
 
+      {/* 🎯 Prix d'opportunité */}
+      {zones && (
+        <div className="rounded-xl border border-positive/40 bg-positive/5 p-4">
+          <div className="text-xs font-semibold text-positive uppercase tracking-wide mb-2">
+            🎯 Prix d&apos;opportunité — à partir de quel prix acheter ?
+          </div>
+          <div className="grid sm:grid-cols-3 gap-3 text-center text-sm">
+            <div className="rounded-lg bg-surface p-3 border border-positive/40">
+              <div className="text-xs text-positive">Excellente affaire</div>
+              <div className="text-xl font-black">&lt; {euro(zones.opportunityPrice)}</div>
+            </div>
+            <div className="rounded-lg bg-surface p-3 border border-accent/40">
+              <div className="text-xs text-accent">Intéressant</div>
+              <div className="text-xl font-bold">
+                {euro(zones.opportunityPrice)} – {euro(zones.fairPrice)}
+              </div>
+            </div>
+            <div className="rounded-lg bg-surface p-3 border border-negative/40">
+              <div className="text-xs text-negative">Marge faible</div>
+              <div className="text-xl font-bold">&gt; {euro(zones.fairPrice)}</div>
+            </div>
+          </div>
+          <p className="text-[11px] text-muted mt-2">
+            Percentiles 15 et 40 sur {zones.sampleSize} observation
+            {zones.sampleSize > 1 ? "s" : ""} (
+            {zones.basis === "adjudications"
+              ? "adjudications uniquement"
+              : "toutes observations"}
+            ).
+          </p>
+        </div>
+      )}
+
+      {/* 📊 Statistiques avancées */}
+      {(stability || saleDelay || performance) && (
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+          {stability && (
+            <Stat
+              label="Stabilité du marché"
+              value={
+                stability.label === "stable"
+                  ? "🟢 Stable"
+                  : stability.label === "variable"
+                    ? "🟡 Variable"
+                    : "🔴 Très variable"
+              }
+              hint={`écart-type ${euro(stability.stdDev)} (±${stability.cvPct.toFixed(0)} %)`}
+            />
+          )}
+          {saleDelay && (
+            <Stat
+              label="⚡ Mon temps moyen de revente"
+              value={`${saleDelay.avgDays} jour${saleDelay.avgDays > 1 ? "s" : ""}`}
+              hint={`sur ${saleDelay.count} transaction${saleDelay.count > 1 ? "s" : ""}`}
+            />
+          )}
+          {performance && (
+            <Stat
+              label="Moi vs le marché"
+              value={
+                <span className={performance.diffPct >= 0 ? "text-positive" : "text-negative"}>
+                  {performance.diffPct >= 0 ? "+" : ""}
+                  {performance.diffPct.toFixed(0)} %
+                </span>
+              }
+              hint={`je revends en moyenne ${euro(performance.myAvgSale)} (marché : ${euro(performance.marketMedianSale)})`}
+            />
+          )}
+        </div>
+      )}
+
       {/* Prix de revente suggérés */}
       {stats.suggestedNormal !== undefined && (
         <div className="rounded-xl border border-accent/40 bg-accent/5 p-4">
@@ -173,12 +258,15 @@ function ObjetContent() {
           <h2 className="text-sm font-semibold text-muted uppercase tracking-wide mb-3">
             📈 Courbe des prix
           </h2>
-          <PriceChart points={observations} />
+          <PriceChart points={active} />
         </section>
 
         {/* Fiche éditable */}
         <ProductEditor product={product} onSaved={refresh} />
       </div>
+
+      {/* 📈 Étude de marché : absorber des dizaines d'annonces d'un coup */}
+      <MarketStudy productId={product.id} onSaved={refresh} />
 
       {/* Observations */}
       <ObservationsSection
@@ -560,10 +648,22 @@ function ObservationsSection({
             </thead>
             <tbody className="divide-y divide-edge">
               {observations.map((o) => (
-                <tr key={o.id}>
+                <tr key={o.id} className={o.rejected ? "opacity-50" : ""}>
                   <td className="py-2 pr-4">{dateFr(o.date)}</td>
-                  <td className="py-2 pr-4 text-right font-medium">{euro(o.price)}</td>
-                  <td className="py-2 pr-4">{kindLabel(o.kind)}</td>
+                  <td
+                    className={`py-2 pr-4 text-right font-medium ${o.rejected ? "line-through" : ""}`}
+                  >
+                    {euro(o.price)}
+                  </td>
+                  <td className="py-2 pr-4">
+                    {o.rejected ? (
+                      <span className="text-negative text-xs">
+                        🚫 Rejetée — {o.rejectReason}
+                      </span>
+                    ) : (
+                      kindLabel(o.kind)
+                    )}
+                  </td>
                   <td className="py-2 pr-4">
                     {o.url ? (
                       <a
@@ -581,14 +681,42 @@ function ObservationsSection({
                   <td className="py-2 pr-4 text-muted text-xs max-w-48 truncate">
                     {o.notes}
                   </td>
-                  <td className="py-2 text-right">
+                  <td className="py-2 text-right whitespace-nowrap">
+                    {o.rejected ? (
+                      <button
+                        onClick={() => {
+                          restoreObservation(o.id);
+                          onChanged();
+                        }}
+                        className="text-positive text-xs hover:underline mr-2"
+                        title="Réintégrer dans les statistiques"
+                      >
+                        ↩
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          const reason = window.prompt(
+                            `Raison du rejet ? (${REJECT_REASONS.join(", ")})`,
+                            "Prix aberrant"
+                          );
+                          if (reason === null) return;
+                          rejectObservation(o.id, reason || "Prix aberrant");
+                          onChanged();
+                        }}
+                        className="text-accent text-xs hover:underline mr-2"
+                        title="Rejeter (exclue des stats, conservée pour mémoire)"
+                      >
+                        🚫
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         deleteObservation(o.id);
                         onChanged();
                       }}
                       className="text-negative text-xs hover:underline"
-                      title="Supprimer l'observation"
+                      title="Supprimer définitivement"
                     >
                       ✕
                     </button>

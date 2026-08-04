@@ -7,7 +7,7 @@
  * l'analyse se met à jour en temps réel pendant la saisie. À l'enregistrement,
  * la couche de stockage recalcule et persiste le tout (localStorage).
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -32,8 +32,12 @@ import {
   type Product,
 } from "@/lib/storage";
 import { euro, hours } from "@/lib/format";
+import { ebaySoldSearchUrl } from "@/lib/import/market";
 import { AnalysisPanel } from "./AnalysisPanel";
 import { ConfidenceBadge } from "./KnowledgeBadges";
+
+/** Au-delà de cet âge, le marché est considéré comme ancien (90 jours). */
+const STALE_DAYS = 90;
 
 const EMPTY: AuctionDraft = {
   ...emptyAuctionInput(),
@@ -94,6 +98,32 @@ export function AuctionForm({
     zones && values.currentPrice > 0
       ? opportunityVerdict(values.currentPrice, zones)
       : null;
+
+  // 🔎 Reconnaissance automatique : liaison d'office quand un seul produit
+  // correspond au titre (l'utilisateur peut toujours détacher).
+  const autoLinked = useRef(false);
+  useEffect(() => {
+    if (autoLinked.current || values.productId || auctionId) return;
+    if (suggestions.length === 1) {
+      autoLinked.current = true;
+      setValues((v) => ({ ...v, productId: suggestions[0].id }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggestions]);
+
+  // Fraîcheur du marché : dernière observation > 90 jours → actualisation.
+  const staleness = useMemo(() => {
+    const last = knownStats?.last?.date;
+    if (!last) return null;
+    const ageDays = Math.floor(
+      (Date.now() - new Date(last).getTime()) / 86_400_000
+    );
+    return { ageDays, stale: ageDays > STALE_DAYS };
+  }, [knownStats]);
+
+  const ebaySearch = ebaySoldSearchUrl(
+    linkedProduct ? linkedProduct.name : values.title
+  );
   // Équipements inclus dans ce lot → plus-value sur les prix suggérés.
   const included = values.accessoriesIncluded ?? [];
   const bonus = linkedProduct
@@ -267,6 +297,9 @@ export function AuctionForm({
                       ({knownStats.count} observation{knownStats.count > 1 ? "s" : ""})
                     </span>
                   )}
+                  {staleness && !staleness.stale && (
+                    <span className="text-positive text-xs"> · marché récent ✓</span>
+                  )}
                 </p>
                 <div className="flex items-center gap-2">
                   {knownStats && <ConfidenceBadge value={knownStats.confidence} />}
@@ -311,6 +344,24 @@ export function AuctionForm({
                       Plus-value des équipements inclus : +{bonus} €
                     </p>
                   )}
+                </div>
+              )}
+              {staleness?.stale && (
+                <div className="rounded-lg border border-accent/40 bg-accent/10 p-3 text-sm">
+                  🟠 <b>Marché ancien</b> : dernière observation il y a{" "}
+                  {Math.round(staleness.ageDays / 30)} mois — actualisation
+                  recommandée avant de vous fier aux prix suggérés.{" "}
+                  <a
+                    href={ebaySearch}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-accent hover:underline font-medium"
+                  >
+                    Ouvrir la recherche eBay « ventes réussies » ↗
+                  </a>{" "}
+                  <span className="text-muted">
+                    puis « 📊 Actualiser le marché » via l&apos;extension.
+                  </span>
                 </div>
               )}
               {zones && (
@@ -370,17 +421,40 @@ export function AuctionForm({
                 </div>
               ) : (
                 <p className="text-xs text-muted">
-                  Pas encore d&apos;observations pour ce produit — ajoutez des
-                  ventes observées sur sa fiche pour activer l&apos;analyse
-                  intelligente.
+                  Pas encore d&apos;observations pour ce produit.{" "}
+                  <a
+                    href={ebaySearch}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-accent hover:underline"
+                  >
+                    Ouvrir la recherche eBay « ventes réussies » ↗
+                  </a>{" "}
+                  puis « 📊 Actualiser le marché » via l&apos;extension pour
+                  activer l&apos;analyse intelligente.
                 </p>
               )}
             </div>
           ) : (
             <div className="space-y-2">
               <p className="text-xs text-muted">
-                Produit inconnu → analyse simple. Liez une fiche produit pour
-                activer l&apos;analyse intelligente (prix suggérés, confiance).
+                ❓ <b>Produit inconnu</b> → analyse simple. Liez une fiche
+                produit pour activer l&apos;analyse intelligente
+                {values.title.trim().length >= 6 && (
+                  <>
+                    {" "}
+                    — ou{" "}
+                    <a
+                      href={ebaySearch}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-accent hover:underline"
+                    >
+                      ouvrir la recherche eBay correspondante ↗
+                    </a>
+                  </>
+                )}
+                .
               </p>
               {suggestions.length > 0 && (
                 <div className="flex flex-wrap gap-2">

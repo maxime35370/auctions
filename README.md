@@ -9,6 +9,14 @@ Aucune installation nécessaire : l'application tourne entièrement dans le
 navigateur. Les données sont stockées localement (localStorage) et peuvent être
 sauvegardées / restaurées en JSON depuis la page Historique.
 
+## 🧩 Extension Chrome/Edge (recommandé)
+
+Le parcours en un clic : depuis une page d'enchère, **« 🔍 Analyser cette
+enchère »** pré-remplit et analyse tout ; depuis une page de résultats eBay,
+**« 📊 Actualiser le marché »** alimente la fiche produit en une fois.
+Installation en 2 minutes : voir [`extension/README.md`](extension/README.md).
+Le collage manuel reste disponible en secours.
+
 ## Utilisation
 
 - **Tableau de bord** — 🔥 pépite du jour, portefeuille (capital engagé,

@@ -115,14 +115,7 @@ function FicheContent() {
               </h2>
               <div className="grid grid-cols-2 gap-2">
                 {record.photos.map((url) => (
-                  <a key={url} href={url} target="_blank" rel="noopener noreferrer">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={url}
-                      alt={record.title}
-                      className="rounded-lg w-full h-32 object-cover border border-edge hover:opacity-90"
-                    />
-                  </a>
+                  <PhotoThumb key={url} url={url} alt={record.title} />
                 ))}
               </div>
             </section>
@@ -358,6 +351,36 @@ function OutcomeSection({
           </p>
         )}
     </section>
+  );
+}
+
+/**
+ * Vignette photo tolérante : les liens d'images externes peuvent expirer ou
+ * refuser l'affichage — une image indisponible montre un emplacement neutre
+ * et ne bloque jamais l'analyse.
+ */
+function PhotoThumb({ url, alt }: { url: string; alt: string }) {
+  const [broken, setBroken] = useState(false);
+  if (broken) {
+    return (
+      <div
+        className="rounded-lg w-full h-32 border border-edge bg-surface-2 flex items-center justify-center text-muted text-xs"
+        title={url}
+      >
+        📷 indisponible
+      </div>
+    );
+  }
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt={alt}
+        onError={() => setBroken(true)}
+        className="rounded-lg w-full h-32 object-cover border border-edge hover:opacity-90"
+      />
+    </a>
   );
 }
 

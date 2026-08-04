@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Auction Intelligence",
+  "version": "1.1.0",
+  "description": "Analyser une enchère ou actualiser le marché dans votre application Auction Intelligence. Aucune donnée n'est transmise à un serveur.",
+  "action": {
+    "default_title": "Auction Intelligence",
+    "default_popup": "popup.html"
+  },
+  "permissions": ["activeTab", "scripting"]
+}

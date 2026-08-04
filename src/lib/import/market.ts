@@ -71,6 +71,37 @@ function findPreviousText(lines: string[], from: number): string | undefined {
   return undefined;
 }
 
+/** URL d'une recherche eBay « ventes réussies » pour un produit. */
+export function ebaySoldSearchUrl(query: string): string {
+  return `https://www.ebay.fr/sch/i.html?_nkw=${encodeURIComponent(query)}&LH_Complete=1&LH_Sold=1`;
+}
+
+/** Devine la source d'observation depuis l'URL d'une page de résultats. */
+export function guessSourceFromUrl(
+  url: string
+): "ebay" | "leboncoin" | "marketplace" | "interencheres" | "autre" {
+  try {
+    const host = new URL(url).hostname;
+    if (/ebay\./i.test(host)) return "ebay";
+    if (/leboncoin\./i.test(host)) return "leboncoin";
+    if (/facebook\./i.test(host)) return "marketplace";
+    if (/interencheres\./i.test(host)) return "interencheres";
+  } catch {
+    // URL invalide → autre
+  }
+  return "autre";
+}
+
+/**
+ * Devine le type d'observations d'une page de résultats :
+ * « ventes réussies » eBay (LH_Sold) → ventes conclues, sinon prix affichés.
+ */
+export function guessKindFromUrl(url: string, pageTitle = ""): "vente" | "annonce" {
+  if (/LH_Sold|LH_Complete/i.test(url)) return "vente";
+  if (/vendu|ventes r[eé]ussies|sold/i.test(pageTitle)) return "vente";
+  return "annonce";
+}
+
 /** Résumé statistique d'une étude de marché (avant enregistrement). */
 export interface MarketSummary {
   count: number;

@@ -64,6 +64,52 @@ export async function importFromUrl(
   return data;
 }
 
+/** Import depuis l'extension Chrome (payload du fragment d'URL). */
+export async function importFromExtension(
+  payload: import("./extension").ExtensionPayload,
+  report: ProgressReporter
+): Promise<StandardAuctionData | null> {
+  const { payloadToHtml, payloadDirectFields } = await import("./extension");
+  const { mergeData } = await import("./connectors/generic");
+
+  report({ icon: "🧩", label: "Données reçues de l'extension Chrome", status: "ok" });
+  const connector = detectConnector(payload.url);
+  if (connector.id !== "generic") {
+    report({ icon: "✅", label: `Site reconnu : ${connector.name}`, status: "ok" });
+  }
+
+  // Champs déjà extraits sur la page par l'extension : annoncés un par un.
+  const f = payload.fields;
+  if (f) {
+    if (f.currentPrice !== undefined)
+      report({ icon: "💰", label: `Prix trouvé : ${f.currentPrice} €`, status: "ok" });
+    if (f.buyerFeePct !== undefined)
+      report({ icon: "💶", label: `Frais trouvés : ${f.buyerFeePct} %`, status: "ok" });
+    if (f.quantity && f.quantity >= 2)
+      report({ icon: "🔢", label: `Quantité détectée : ${f.quantity}`, status: "ok" });
+    if (f.endDate)
+      report({ icon: "📅", label: `Date de fin : ${f.endDate}`, status: "ok" });
+    if (f.location)
+      report({ icon: "📍", label: `Localisation : ${f.location}`, status: "ok" });
+    if (!f.condition)
+      report({ icon: "⚠️", label: "État précis non indiqué", status: "warn" });
+  }
+
+  const { data, fieldsFound } = await connector.extract({
+    url: payload.url,
+    html: payloadToHtml(payload),
+    report,
+  });
+  const merged = mergeData(payloadDirectFields(payload), data);
+
+  report({
+    icon: fieldsFound >= 3 ? "🎉" : "⚠️",
+    label: `${fieldsFound} champ(s) extrait(s) — vérifiez et complétez avant d'enregistrer`,
+    status: fieldsFound >= 3 ? "ok" : "warn",
+  });
+  return merged;
+}
+
 /** Import depuis un texte / HTML collé par l'utilisateur. */
 export async function importFromClipboard(
   content: string,

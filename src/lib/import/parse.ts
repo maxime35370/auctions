@@ -200,6 +200,36 @@ export function extractImages(doc: Document, baseUrl?: string): string[] {
 // Texte libre (mode presse-papiers)
 // ---------------------------------------------------------------------------
 
+/** Localisation française : « 35000 Rennes » → « Rennes (35) ». */
+export function findLocation(text: string): string | undefined {
+  const m = text.match(/\b(\d{5})\s+([A-ZÀ-Ÿ][A-Za-zà-ÿ' -]{2,30}?)(?=[\n,.]|\s{2}|$)/m);
+  if (!m) return undefined;
+  const dept = m[1].slice(0, 2);
+  return `${m[2].trim()} (${dept})`;
+}
+
+/** Maison de vente : « SVV … », « … Enchères », « Hôtel des ventes … ». */
+export function findAuctionHouse(text: string): string | undefined {
+  const patterns = [
+    /\b(SVV\s+[A-ZÀ-Ÿ][\w'à-ÿ -]{2,40})/,
+    /\b(H[oô]tel des ventes[\w'à-ÿ -]{0,40})/i,
+    /\b([A-ZÀ-Ÿ][\w'à-ÿ-]+(?:\s[\w'à-ÿ-]+){0,3}\s+ench[eè]res)\b/i,
+  ];
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (m) return m[1].trim();
+  }
+  return undefined;
+}
+
+/** Quantité d'un lot : « Lot de 3 NAS… » → 3. */
+export function findQuantity(title: string): number | undefined {
+  const m = title.match(/\blot de\s+(\d{1,3})\b/i);
+  if (!m) return undefined;
+  const n = Number(m[1]);
+  return n >= 2 && n <= 500 ? n : undefined;
+}
+
 /** Mots typiques de la navigation / des en-têtes de site (à éviter en titre). */
 const BOILERPLATE =
   /vente aux ench[eè]res|interencheres|agorastore|cookies|se connecter|mon compte|recherche|menu|accueil/i;

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        width: 260px;
+        margin: 0;
+        padding: 12px;
+        background: #0b1020;
+        color: #e7ecf7;
+        font-family: system-ui, sans-serif;
+      }
+      h1 {
+        font-size: 13px;
+        margin: 0 0 10px;
+        color: #f5b342;
+      }
+      button {
+        display: block;
+        width: 100%;
+        margin-bottom: 8px;
+        padding: 10px;
+        border: 1px solid #263156;
+        border-radius: 8px;
+        background: #1a2340;
+        color: #e7ecf7;
+        font-size: 13px;
+        text-align: left;
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: #f5b342;
+      }
+      button b {
+        display: block;
+      }
+      button span {
+        color: #8b96b8;
+        font-size: 11px;
+      }
+      p {
+        font-size: 10px;
+        color: #8b96b8;
+        margin: 4px 0 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>◆ Auction Intelligence</h1>
+    <button id="auction">
+      <b>🔍 Analyser cette enchère</b>
+      <span>Depuis la page d'un lot (Interencheres, Agorastore…)</span>
+    </button>
+    <button id="market">
+      <b>📊 Actualiser le marché</b>
+      <span>Depuis une page de résultats (eBay ventes réussies…)</span>
+    </button>
+    <p>Les données restent dans votre navigateur — rien n'est envoyé à un serveur.</p>
+    <script src="popup.js"></script>
+  </body>
+</html>

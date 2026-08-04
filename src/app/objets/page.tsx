@@ -21,6 +21,7 @@ import {
 } from "@/lib/storage";
 import { euro } from "@/lib/format";
 import { ConfidenceBadge, Trend } from "@/components/KnowledgeBadges";
+import { MarketReceiver } from "@/components/MarketReceiver";
 
 export default function ObjetsPage() {
   const [products, setProducts] = useState<Product[] | null>(null);
@@ -57,6 +58,9 @@ export default function ObjetsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Réception d'une étude de marché envoyée par l'extension Chrome */}
+      <MarketReceiver />
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">

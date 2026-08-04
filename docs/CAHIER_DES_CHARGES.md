@@ -119,7 +119,8 @@ devient un client d'API — les pages ne changent pas.
 | V1.3 | Connecteurs + import démo/presse-papiers + progression | ✅ livré |
 | V2 | **Base de connaissances** : fiches produits, ventes observées multi-sources, courbe de prix, prix suggérés (percentiles), indice de confiance calculé, tendance/indice de marché, analyse intelligente (produit connu), transactions → observations automatiques | ✅ livré |
 | V2.1 | **Moteur statistique** : 🎯 prix d'opportunité (p15/p40, zones d'achat), stabilité (écart-type/CV), moi vs marché, temps moyen de revente réel, observations rejetées (3ᵉ base) ; **📊 Étude de marché** : import en masse d'une page de résultats collée (eBay/Leboncoin/Marketplace) → dizaines d'observations validées d'un clic | ✅ livré |
-| V2.2 | Connecteur Interencheres affiné sur pages réelles ; bibliothèque de snapshots datés comparables ; temps de vente réels alimentant délais et probabilités des scénarios | à venir |
+| V2.2 | **🧩 Extension Chrome/Edge** (MV3, `activeTab` seul) : « Analyser cette enchère » et « Actualiser le marché » — JSON compact structuré via fragment d'URL (jamais envoyé à un serveur), reconnaissance automatique du produit, états explicites (marché récent ✓ / marché ancien → recherche eBay proposée / produit inconnu), photos tolérantes aux liens morts | ✅ livré |
+| V2.3 | Connecteur Interencheres affiné sur pages réelles (retours utilisateur) ; Agorastore, Enchères-Domaine ; bibliothèque de snapshots datés ; temps de vente réels alimentant délais et probabilités | à venir |
 | V3 | Backend + comptes + synchronisation ; alertes/notifications ; détection automatique du modèle depuis titre/photos | à venir |
 
 ## 9. Qualité

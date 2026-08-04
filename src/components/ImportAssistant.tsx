@@ -5,13 +5,18 @@
  * (✅ site reconnu, 📷 photos trouvées, ⚠ frais non trouvés…) → formulaire
  * pré-rempli via onImported().
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   importFromClipboard,
+  importFromExtension,
   importFromUrl,
   toDraft,
   type ImportStep,
 } from "@/lib/import/importer";
+import {
+  decodeExtensionPayload,
+  EXT_IMPORT_HASH_PREFIX,
+} from "@/lib/import/extension";
 import type { AuctionDraft } from "@/lib/storage";
 
 export function ImportAssistant({
@@ -45,6 +50,25 @@ export function ImportAssistant({
       setBusy(false);
     }
   }
+
+  // 🧩 Import automatique quand la page est ouverte par l'extension Chrome
+  // (#ext-import=… dans l'URL — le fragment n'est jamais envoyé à un serveur).
+  const extHandled = useRef(false);
+  useEffect(() => {
+    if (extHandled.current) return;
+    if (!window.location.hash.startsWith(EXT_IMPORT_HASH_PREFIX)) return;
+    extHandled.current = true;
+    const payload = decodeExtensionPayload(window.location.hash);
+    // Nettoie l'URL (évite de ré-importer au rechargement).
+    window.history.replaceState(null, "", window.location.pathname);
+    if (!payload) return;
+    setUrl(payload.url);
+    run(async () => {
+      const data = await importFromExtension(payload, report);
+      if (data) onImported(toDraft(data));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleUrl = () =>
     run(async () => {
@@ -183,8 +207,19 @@ export function ImportAssistant({
 
       <p className="text-[11px] text-muted">
         L&apos;import remplit le formulaire ci-dessous — vérifiez toujours les
-        valeurs avant d&apos;enregistrer. Certains sites bloquent la lecture
-        directe : le mode 📋 presse-papiers fonctionne partout.
+        valeurs avant d&apos;enregistrer. Trois voies : 🧩 l&apos;extension
+        Chrome « Analyser cette enchère » (un clic depuis la page de
+        l&apos;annonce —{" "}
+        <a
+          href="https://github.com/maxime35370/auctions/tree/main/extension"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-accent hover:underline"
+        >
+          installation
+        </a>
+        ), 🌐 l&apos;URL directe (selon les sites), et 📋 le presse-papiers
+        qui fonctionne partout.
       </p>
     </section>
   );

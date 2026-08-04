@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   extractFromText,
+  findAuctionHouse,
   findBuyerFeePct,
   findEndDate,
+  findLocation,
   findPriceNear,
+  findQuantity,
   parseFrenchDate,
   parseFrenchNumber,
 } from "../parse";
@@ -32,6 +35,25 @@ describe("parse — nombres et prix français", () => {
     expect(findBuyerFeePct("aucune mention")).toBeUndefined();
     // Un pourcentage aberrant (> 50 %) est rejeté
     expect(findBuyerFeePct("frais : 99 %")).toBeUndefined();
+  });
+});
+
+describe("parse — localisation, maison de vente, quantité", () => {
+  it("trouve une localisation française (code postal + ville)", () => {
+    expect(findLocation("Retrait sur place : 35000 Rennes\nautre ligne")).toBe("Rennes (35)");
+    expect(findLocation("aucune adresse")).toBeUndefined();
+  });
+
+  it("trouve une maison de vente", () => {
+    expect(findAuctionHouse("Vente organisée par SVV Atlantique Ouest.")).toContain("SVV Atlantique");
+    expect(findAuctionHouse("Hôtel des ventes de Rouen — vente courante")).toContain("tel des ventes");
+    expect(findAuctionHouse("rien ici")).toBeUndefined();
+  });
+
+  it("détecte la quantité d'un lot", () => {
+    expect(findQuantity("Lot de 3 NAS Synology DS920+")).toBe(3);
+    expect(findQuantity("Un NAS Synology")).toBeUndefined();
+    expect(findQuantity("Lot de 1 objet")).toBeUndefined();
   });
 });
 
@@ -111,6 +133,97 @@ describe("importer — conversion en brouillon", () => {
     const draft = toDraft({});
     expect(draft.buyerFeePct).toBe(20);
     expect(draft.category).toBe("autre");
+  });
+});
+
+describe("extension — pont avec l'extension Chrome", () => {
+  it("encode puis décode un payload (aller-retour fidèle, accents inclus)", async () => {
+    const { encodeExtensionPayload, decodeExtensionPayload, EXT_IMPORT_HASH_PREFIX } =
+      await import("../extension");
+    const payload = {
+      v: 1 as const,
+      url: "https://www.interencheres.com/lot/42",
+      title: "Lot n°42 — Objectif Canon éprouvé",
+      meta: '<meta property="og:title" content="Canon 100-400">',
+      text: "Enchère actuelle : 720 €\nFrais : 24 % TTC",
+      photos: ["https://cdn.x/1.jpg"],
+    };
+    const encoded = encodeExtensionPayload(payload);
+    expect(encoded).not.toMatch(/[+/=]/); // URL-safe
+    const decoded = decodeExtensionPayload(EXT_IMPORT_HASH_PREFIX + encoded);
+    expect(decoded).toEqual(payload);
+  });
+
+  it("rejette les fragments invalides sans lever d'erreur", async () => {
+    const { decodeExtensionPayload } = await import("../extension");
+    expect(decodeExtensionPayload("#ext-import=%%%")).toBeNull();
+    expect(decodeExtensionPayload("#autre=abc")).toBeNull();
+  });
+
+  it("décode un payload v2 avec champs structurés", async () => {
+    const { encodeExtensionPayload, decodeExtensionPayload, EXT_IMPORT_HASH_PREFIX } =
+      await import("../extension");
+    const payload = {
+      v: 2 as const,
+      url: "https://www.interencheres.com/lot/9",
+      title: "Lot de 3 NAS Synology DS920+",
+      meta: "",
+      text: "extrait",
+      photos: [],
+      fields: {
+        title: "Lot de 3 NAS Synology DS920+",
+        currentPrice: 210,
+        buyerFeePct: 24,
+        location: "Rennes (35)",
+        endDate: "2026-08-08",
+        quantity: 3,
+      },
+    };
+    const decoded = decodeExtensionPayload(
+      EXT_IMPORT_HASH_PREFIX + encodeExtensionPayload(payload)
+    );
+    expect(decoded?.fields?.currentPrice).toBe(210);
+    expect(decoded?.fields?.quantity).toBe(3);
+  });
+
+  it("les champs v2 sont prioritaires et la quantité passe en commentaire", async () => {
+    const { importFromExtension } = await import("../importer");
+    const { toDraft } = await import("../importer");
+    const data = await importFromExtension(
+      {
+        v: 2,
+        url: "https://www.interencheres.com/lot/9",
+        title: "page",
+        meta: "",
+        text: "Enchère en cours : 999 €", // sera battu par le champ direct
+        photos: [],
+        fields: { currentPrice: 210, buyerFeePct: 24, quantity: 3, location: "Rennes (35)" },
+      },
+      () => {}
+    );
+    expect(data?.currentPrice).toBe(210);
+    expect(data?.location).toBe("Rennes (35)");
+    const draft = toDraft(data!);
+    expect(draft.comments).toContain("Quantité détectée : 3");
+  });
+
+  it("importFromExtension extrait via les connecteurs et garde les photos", async () => {
+    const { importFromExtension } = await import("../importer");
+    const data = await importFromExtension(
+      {
+        v: 1,
+        url: "https://www.interencheres.com/lot/42",
+        title: "Lot 42",
+        meta: "",
+        text: "Lot de 2 imprimantes 3D Creality Ender 3\nEnchère en cours : 120 €\nFrais acheteur : 20 % TTC",
+        photos: ["https://cdn.x/a.jpg", "https://cdn.x/b.jpg"],
+      },
+      () => {}
+    );
+    expect(data?.currentPrice).toBe(120);
+    expect(data?.buyerFeePct).toBe(20);
+    expect(data?.photos).toEqual(["https://cdn.x/a.jpg", "https://cdn.x/b.jpg"]);
+    expect(data?.sourceUrl).toContain("interencheres");
   });
 });
 

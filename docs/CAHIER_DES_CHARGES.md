@@ -112,9 +112,9 @@ devient un client d'API — les pages ne changent pas.
 | V1.1 | Site statique GitHub Pages + localStorage | ✅ livré |
 | V1.2 | Conseils (stratégie, jauge, checklist), stock, portefeuille | ✅ livré |
 | V1.3 | Connecteurs + import démo/presse-papiers + progression | ✅ livré |
-| V2 | **Base de connaissances** : fiches objets, historique de prix par objet (courbes), indice de confiance calculé sur les données réelles | à venir |
+| V2 | **Base de connaissances** : fiches produits, ventes observées multi-sources, courbe de prix, prix suggérés (percentiles), indice de confiance calculé, tendance/indice de marché, analyse intelligente (produit connu), transactions → observations automatiques | ✅ livré |
 | V2.1 | Connecteur Interencheres affiné sur pages réelles ; Agorastore | à venir |
-| V2.2 | Statistiques avancées : « tu gagnes le plus avec… », temps de vente réels alimentant les probabilités | à venir |
+| V2.2 | Statistiques avancées : temps de vente réels alimentant délais et probabilités des scénarios | à venir |
 | V3 | Backend + comptes + synchronisation ; alertes/notifications ; détection automatique du modèle depuis titre/photos | à venir |
 
 ## 9. Qualité

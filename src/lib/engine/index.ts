@@ -14,6 +14,7 @@ import { checklistFor, explainScore, recommendPlatforms } from "./advice";
 import type { AuctionAnalysis, AuctionInput } from "./types";
 
 export * from "./types";
+export * from "./knowledge";
 export { TARGET_ROI } from "./costs";
 export { checklistFor, recommendPlatforms } from "./advice";
 

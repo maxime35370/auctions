@@ -7,14 +7,17 @@
  */
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { CATEGORY_LABELS, type Category } from "@/lib/engine";
+import { CATEGORY_LABELS, marketIndex, type Category } from "@/lib/engine";
 import {
+  allObservations,
   endingSoon,
   listAuctions,
+  listProducts,
   portfolioStats,
   realizedByCategory,
   type AuctionRecord,
 } from "@/lib/storage";
+import { Trend } from "@/components/KnowledgeBadges";
 import { loadExamples } from "@/lib/examples";
 import { dateFr, euro, pct, signedEuro } from "@/lib/format";
 import { ScoreStars } from "@/components/ScoreStars";
@@ -23,9 +26,23 @@ const catLabel = (c: string) => CATEGORY_LABELS[c as Category] ?? c;
 
 export default function DashboardPage() {
   const [auctions, setAuctions] = useState<AuctionRecord[] | null>(null);
+  const [market, setMarket] = useState<
+    { key: string; trendPct: number | undefined; count: number }[]
+  >([]);
 
   useEffect(() => {
     setAuctions(listAuctions());
+    // 📈 Indice de marché : observations groupées par catégorie de produit.
+    const products = listProducts();
+    const byCategory = new Map<string, { date: string; price: number; kind: "vente" | "enchere" | "annonce" }[]>();
+    for (const o of allObservations()) {
+      const category = products.find((p) => p.id === o.productId)?.category;
+      if (!category) continue;
+      const list = byCategory.get(category) ?? [];
+      list.push({ date: o.date, price: o.price, kind: o.kind });
+      byCategory.set(category, list);
+    }
+    setMarket(marketIndex(byCategory).filter((e) => e.trendPct !== undefined));
   }, []);
 
   if (auctions === null) return null;
@@ -161,6 +178,32 @@ export default function DashboardPage() {
               </div>
             </div>
           </Link>
+
+          {/* 📈 Indice du marché (dès que la base de connaissances a des données) */}
+          {market.length > 0 && (
+            <section className="rounded-xl border border-edge bg-surface p-4">
+              <h2 className="text-sm font-semibold text-muted mb-3 uppercase tracking-wide">
+                📈 Indice du marché{" "}
+                <span className="normal-case font-normal">
+                  (6 derniers mois vs 6 précédents)
+                </span>
+              </h2>
+              <div className="flex flex-wrap gap-3">
+                {market.map((e) => (
+                  <div
+                    key={e.key}
+                    className="rounded-lg border border-edge bg-surface-2 px-4 py-2 text-sm"
+                  >
+                    <span className="text-muted">
+                      {catLabel(e.key)}{" "}
+                      <span className="text-[10px]">({e.count} obs.)</span>
+                    </span>{" "}
+                    <Trend pct={e.trendPct!} />
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* ⚡ Enchères qui se terminent bientôt */}
           {soon.length > 0 && (

@@ -5,8 +5,7 @@
  *
  * Le moteur (fonctions pures) tourne directement dans le navigateur :
  * l'analyse se met à jour en temps réel pendant la saisie. À l'enregistrement,
- * le serveur revalide et recalcule tout — le client n'est jamais la source de
- * vérité des chiffres persistés.
+ * la couche de stockage recalcule et persiste le tout (localStorage).
  */
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -17,17 +16,10 @@ import {
   CONDITIONS,
   type AuctionInput,
 } from "@/lib/engine";
+import { saveAuction, type AuctionDraft } from "@/lib/storage";
 import { AnalysisPanel } from "./AnalysisPanel";
 
-export interface AuctionFormValues extends AuctionInput {
-  sourceUrl: string;
-  title: string;
-  auctionHouse: string;
-  location: string;
-  comments: string;
-}
-
-const EMPTY: AuctionFormValues = {
+const EMPTY: AuctionDraft = {
   sourceUrl: "",
   title: "",
   auctionHouse: "",
@@ -50,53 +42,37 @@ export function AuctionForm({
   initialValues,
   auctionId,
 }: {
-  initialValues?: Partial<AuctionFormValues>;
-  /** Si fourni, le formulaire édite une enchère existante (PUT). */
+  initialValues?: Partial<AuctionDraft>;
+  /** Si fourni, le formulaire édite une enchère existante. */
   auctionId?: string;
 }) {
   const router = useRouter();
-  const [values, setValues] = useState<AuctionFormValues>({
+  const [values, setValues] = useState<AuctionDraft>({
     ...EMPTY,
     ...initialValues,
   });
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const analysis = useMemo(() => analyzeAuction(values), [values]);
 
-  const set = <K extends keyof AuctionFormValues>(
-    key: K,
-    value: AuctionFormValues[K]
-  ) => setValues((v) => ({ ...v, [key]: value }));
+  const set = <K extends keyof AuctionDraft>(key: K, value: AuctionDraft[K]) =>
+    setValues((v) => ({ ...v, [key]: value }));
 
   const num =
-    (key: keyof AuctionFormValues) =>
-    (e: React.ChangeEvent<HTMLInputElement>) =>
+    (key: keyof AuctionDraft) => (e: React.ChangeEvent<HTMLInputElement>) =>
       set(key, (e.target.value === "" ? 0 : Number(e.target.value)) as never);
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setSaving(true);
-    setError(null);
+    if (!values.title.trim()) {
+      setError("Le titre est obligatoire.");
+      return;
+    }
     try {
-      const res = await fetch(
-        auctionId ? `/api/auctions/${auctionId}` : "/api/auctions",
-        {
-          method: auctionId ? "PUT" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(values),
-        }
-      );
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.error ?? `Erreur ${res.status}`);
-      }
-      const auction = await res.json();
-      router.push(`/encheres/${auction.id}`);
-      router.refresh();
+      const record = saveAuction(values, auctionId);
+      router.push(`/fiche?id=${record.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inattendue");
-      setSaving(false);
     }
   }
 
@@ -218,14 +194,9 @@ export function AuctionForm({
 
         <button
           type="submit"
-          disabled={saving}
-          className="w-full rounded-lg bg-accent text-background font-semibold py-2.5 hover:opacity-90 disabled:opacity-50 transition-opacity"
+          className="w-full rounded-lg bg-accent text-background font-semibold py-2.5 hover:opacity-90 transition-opacity"
         >
-          {saving
-            ? "Enregistrement…"
-            : auctionId
-              ? "Mettre à jour l'analyse"
-              : "Enregistrer l'analyse"}
+          {auctionId ? "Mettre à jour l'analyse" : "Enregistrer l'analyse"}
         </button>
       </form>
 

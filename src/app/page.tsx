@@ -1,20 +1,25 @@
+"use client";
+
 /**
  * Tableau de bord : vue d'ensemble des enchères analysées.
- * Les statistiques sont calculées à la volée depuis la base — à terme (V2),
- * elles seront enrichies par l'historique des ventes réelles.
+ * Toutes les données vivent dans le navigateur (voir src/lib/storage.ts).
  */
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { useEffect, useState } from "react";
 import { CATEGORY_LABELS, type Category } from "@/lib/engine";
+import { listAuctions, type AuctionRecord } from "@/lib/storage";
+import { loadExamples } from "@/lib/examples";
 import { euro, pct } from "@/lib/format";
 import { ScoreStars } from "@/components/ScoreStars";
 
-export const dynamic = "force-dynamic";
+export default function DashboardPage() {
+  const [auctions, setAuctions] = useState<AuctionRecord[] | null>(null);
 
-export default async function DashboardPage() {
-  const auctions = await prisma.auction.findMany({
-    orderBy: { createdAt: "desc" },
-  });
+  useEffect(() => {
+    setAuctions(listAuctions());
+  }, []);
+
+  if (auctions === null) return null; // premier rendu (avant lecture du stockage)
 
   const count = auctions.length;
   const gems = auctions.filter((a) => a.score >= 80);
@@ -22,7 +27,6 @@ export default async function DashboardPage() {
     ? auctions.reduce((sum, a) => sum + a.roi, 0) / count
     : 0;
 
-  // ROI moyen par catégorie, trié décroissant
   const byCategory = new Map<string, { total: number; n: number }>();
   for (const a of auctions) {
     const entry = byCategory.get(a.category) ?? { total: 0, n: 0 };
@@ -53,7 +57,6 @@ export default async function DashboardPage() {
         </Link>
       </div>
 
-      {/* Statistiques clés */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Enchères observées" value={String(count)} />
         <StatCard label="Pépites (score ≥ 80)" value={String(gems.length)} accent />
@@ -72,16 +75,26 @@ export default async function DashboardPage() {
             Commencez par analyser votre première enchère : l&apos;application
             calculera le coût réel, le budget conseillé et le potentiel de gain.
           </p>
-          <Link
-            href="/analyse"
-            className="inline-block rounded-lg bg-accent text-background font-semibold px-4 py-2 text-sm mt-2"
-          >
-            Analyser une enchère
-          </Link>
+          <div className="flex justify-center gap-3 mt-2">
+            <Link
+              href="/analyse"
+              className="rounded-lg bg-accent text-background font-semibold px-4 py-2 text-sm"
+            >
+              Analyser une enchère
+            </Link>
+            <button
+              onClick={() => {
+                loadExamples();
+                setAuctions(listAuctions());
+              }}
+              className="rounded-lg border border-edge px-4 py-2 text-sm hover:bg-surface-2 transition-colors"
+            >
+              Charger 3 exemples
+            </button>
+          </div>
         </div>
       ) : (
         <div className="grid lg:grid-cols-2 gap-6">
-          {/* Radar des pépites (top opportunités) */}
           <section className="rounded-xl border border-edge bg-surface p-4">
             <h2 className="text-sm font-semibold text-muted mb-3 uppercase tracking-wide">
               🏆 Meilleures opportunités
@@ -90,7 +103,7 @@ export default async function DashboardPage() {
               {topOpportunities.map((a) => (
                 <li key={a.id}>
                   <Link
-                    href={`/encheres/${a.id}`}
+                    href={`/fiche?id=${a.id}`}
                     className="flex items-center justify-between py-2.5 hover:bg-surface-2 rounded-lg px-2 -mx-2 transition-colors"
                   >
                     <div className="min-w-0">
@@ -107,7 +120,6 @@ export default async function DashboardPage() {
             </ul>
           </section>
 
-          {/* Catégories les plus rentables */}
           <section className="rounded-xl border border-edge bg-surface p-4">
             <h2 className="text-sm font-semibold text-muted mb-3 uppercase tracking-wide">
               Catégories les plus rentables

@@ -70,9 +70,9 @@ export function scorePopularity(category: string): number {
   return CATEGORY_POPULARITY[category] ?? 50;
 }
 
-/** Remise en état : 0 h → 100 pts, décroissance linéaire jusqu'à 20 h → 0 pt. */
-export function scoreRefurb(refurbHours: number): number {
-  return clamp(100 - (refurbHours / 20) * 100);
+/** Temps de travail total : 0 h → 100 pts, décroissance linéaire jusqu'à 20 h → 0 pt. */
+export function scoreRefurb(totalTimeHours: number): number {
+  return clamp(100 - (totalTimeHours / 20) * 100);
 }
 
 /**
@@ -107,13 +107,14 @@ export function scoreConfidence(input: AuctionInput): number {
 export function computeScore(
   input: AuctionInput,
   roiPct: number,
-  totalCost: number
+  totalCost: number,
+  totalTimeHours: number
 ): { score: number; stars: number; criteria: ScoreCriterion[] } {
   const criteria: ScoreCriterion[] = [
     { key: "rentabilite", label: "Rentabilité", weight: 0.35, value: Math.round(scoreProfitability(roiPct)) },
     { key: "faciliteRevente", label: "Facilité de revente", weight: 0.15, value: Math.round(scoreLiquidity(input)) },
     { key: "popularite", label: "Popularité", weight: 0.1, value: Math.round(scorePopularity(input.category)) },
-    { key: "remiseEnEtat", label: "Remise en état", weight: 0.1, value: Math.round(scoreRefurb(input.refurbHours)) },
+    { key: "remiseEnEtat", label: "Temps de travail", weight: 0.1, value: Math.round(scoreRefurb(totalTimeHours)) },
     { key: "risque", label: "Risque maîtrisé", weight: 0.2, value: Math.round(scoreRisk(input, totalCost)) },
     { key: "confiance", label: "Confiance", weight: 0.1, value: Math.round(scoreConfidence(input)) },
   ];

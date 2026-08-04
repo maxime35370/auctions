@@ -9,9 +9,12 @@
  *  - ROI             = bénéfice net / coût total réel
  *  - Budget max      = prix marteau maximal qui préserve encore le ROI cible
  *                      sur le scénario de revente « normal »
+ *  - Temps total     = somme de la décomposition (remise en état, nettoyage,
+ *                      photos, annonce, emballage, SAV)
  */
 
-import type { AuctionInput, ResaleScenario } from "./types";
+import { SCENARIO_META } from "./strategy";
+import type { AuctionInput, ResaleScenario, TimeBreakdown } from "./types";
 
 /** ROI cible utilisé pour le budget maximal conseillé (30 % par défaut). */
 export const TARGET_ROI = 0.3;
@@ -68,9 +71,22 @@ export function computeScenarios(
     label: string,
     price: number
   ): ResaleScenario => {
-    const netProfit = round2(price - totalCost);
+    const grossProfit = round2(price - totalCost);
+    // Gain réel : on retire la commission de la plateforme et les frais de
+    // revente fixes (essence, cartons…) — les dépenses qu'on oublie toujours.
+    const netProfit = round2(
+      price * (1 - input.sellingFeePct / 100) - totalCost - input.sellingMiscCost
+    );
     const roi = totalCost > 0 ? round2((netProfit / totalCost) * 100) : 0;
-    return { kind, label, price: round2(price), netProfit, roi };
+    return {
+      kind,
+      label,
+      price: round2(price),
+      grossProfit,
+      netProfit,
+      roi,
+      ...SCENARIO_META[kind],
+    };
   };
 
   return [
@@ -78,4 +94,16 @@ export function computeScenarios(
     make("normal", "Revente normale", input.resaleNormal),
     make("optimise", "Revente optimisée", input.resaleOptimized),
   ];
+}
+
+/** Temps total estimé d'une revente (heures). */
+export function totalTime(t: TimeBreakdown): number {
+  return round2(
+    t.refurbHours +
+      t.cleaningHours +
+      t.photoHours +
+      t.listingHours +
+      t.packingHours +
+      t.savHours
+  );
 }

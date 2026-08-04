@@ -14,28 +14,23 @@ import {
   CATEGORIES,
   CATEGORY_LABELS,
   CONDITIONS,
+  emptyAuctionInput,
   type AuctionInput,
 } from "@/lib/engine";
 import { saveAuction, type AuctionDraft } from "@/lib/storage";
+import { hours } from "@/lib/format";
 import { AnalysisPanel } from "./AnalysisPanel";
 
 const EMPTY: AuctionDraft = {
+  ...emptyAuctionInput(),
   sourceUrl: "",
   title: "",
   auctionHouse: "",
   location: "",
   comments: "",
-  currentPrice: 0,
+  endDate: "",
+  photos: [],
   buyerFeePct: 20,
-  vatPct: 0,
-  travelCost: 0,
-  shippingCost: 0,
-  condition: "bon",
-  category: "autre",
-  refurbHours: 0,
-  resaleFast: 0,
-  resaleNormal: 0,
-  resaleOptimized: 0,
 };
 
 export function AuctionForm({
@@ -51,9 +46,19 @@ export function AuctionForm({
     ...EMPTY,
     ...initialValues,
   });
+  const [photosText, setPhotosText] = useState(
+    (initialValues?.photos ?? []).join("\n")
+  );
   const [error, setError] = useState<string | null>(null);
 
   const analysis = useMemo(() => analyzeAuction(values), [values]);
+  const totalHours =
+    values.refurbHours +
+    values.cleaningHours +
+    values.photoHours +
+    values.listingHours +
+    values.packingHours +
+    values.savHours;
 
   const set = <K extends keyof AuctionDraft>(key: K, value: AuctionDraft[K]) =>
     setValues((v) => ({ ...v, [key]: value }));
@@ -69,7 +74,11 @@ export function AuctionForm({
       return;
     }
     try {
-      const record = saveAuction(values, auctionId);
+      const photos = photosText
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l.startsWith("http"));
+      const record = saveAuction({ ...values, photos }, auctionId);
       router.push(`/fiche?id=${record.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur inattendue");
@@ -155,17 +164,36 @@ export function AuctionForm({
                 onChange={(e) => set("location", e.target.value)}
               />
             </div>
+            <div>
+              <label className="field-label">Fin de l&apos;enchère</label>
+              <input
+                className="field"
+                type="date"
+                value={values.endDate}
+                onChange={(e) => set("endDate", e.target.value)}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="field-label">
+              📷 Photos <span className="text-muted">(une URL par ligne)</span>
+            </label>
+            <textarea
+              className="field min-h-16 font-mono text-xs"
+              placeholder={"https://…/photo1.jpg\nhttps://…/photo2.jpg"}
+              value={photosText}
+              onChange={(e) => setPhotosText(e.target.value)}
+            />
           </div>
         </Section>
 
-        <Section title="Coûts">
+        <Section title="Coûts d'achat">
           <div className="grid grid-cols-2 gap-3">
             <NumberField label="Prix actuel (€)" value={values.currentPrice} onChange={num("currentPrice")} />
             <NumberField label="Frais acheteur (%)" value={values.buyerFeePct} onChange={num("buyerFeePct")} step={0.1} />
             <NumberField label="TVA (%)" value={values.vatPct} onChange={num("vatPct")} step={0.1} />
             <NumberField label="Déplacement (€)" value={values.travelCost} onChange={num("travelCost")} />
             <NumberField label="Livraison (€)" value={values.shippingCost} onChange={num("shippingCost")} />
-            <NumberField label="Remise en état (heures)" value={values.refurbHours} onChange={num("refurbHours")} step={0.5} />
           </div>
         </Section>
 
@@ -174,6 +202,40 @@ export function AuctionForm({
             <NumberField label="Rapide (€)" value={values.resaleFast} onChange={num("resaleFast")} />
             <NumberField label="Normale (€)" value={values.resaleNormal} onChange={num("resaleNormal")} />
             <NumberField label="Optimisée (€)" value={values.resaleOptimized} onChange={num("resaleOptimized")} />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <NumberField
+              label="Commission plateforme (%)"
+              value={values.sellingFeePct}
+              onChange={num("sellingFeePct")}
+              step={0.1}
+              hint="eBay, PayPal…"
+            />
+            <NumberField
+              label="Frais de revente (€)"
+              value={values.sellingMiscCost}
+              onChange={num("sellingMiscCost")}
+              hint="essence, cartons, scotch…"
+            />
+            <NumberField
+              label="Gain minimum visé (€)"
+              value={values.minProfitTarget}
+              onChange={num("minProfitTarget")}
+              hint="en dessous : pas la peine"
+            />
+          </div>
+        </Section>
+
+        <Section
+          title={`Temps de travail — total : ${hours(totalHours)}`}
+        >
+          <div className="grid grid-cols-3 gap-3">
+            <NumberField label="Remise en état (h)" value={values.refurbHours} onChange={num("refurbHours")} step={0.25} />
+            <NumberField label="Nettoyage (h)" value={values.cleaningHours} onChange={num("cleaningHours")} step={0.25} />
+            <NumberField label="Photos (h)" value={values.photoHours} onChange={num("photoHours")} step={0.25} />
+            <NumberField label="Annonce (h)" value={values.listingHours} onChange={num("listingHours")} step={0.25} />
+            <NumberField label="Emballage (h)" value={values.packingHours} onChange={num("packingHours")} step={0.25} />
+            <NumberField label="SAV (h)" value={values.savHours} onChange={num("savHours")} step={0.25} />
           </div>
         </Section>
 
@@ -231,11 +293,13 @@ function NumberField({
   value,
   onChange,
   step = 1,
+  hint,
 }: {
   label: string;
   value: number;
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   step?: number;
+  hint?: string;
 }) {
   return (
     <div>
@@ -249,6 +313,7 @@ function NumberField({
         placeholder="0"
         onChange={onChange}
       />
+      {hint && <p className="text-[10px] text-muted mt-0.5">{hint}</p>}
     </div>
   );
 }

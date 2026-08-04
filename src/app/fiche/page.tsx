@@ -1,9 +1,8 @@
 "use client";
 
 /**
- * Fiche détaillée d'une enchère (?id=<enchère>).
- * L'analyse est recalculée depuis les entrées : la fiche reflète toujours
- * les règles métier actuelles du moteur.
+ * Fiche détaillée d'une enchère (?id=<enchère>) : analyse complète, photos,
+ * checklist de vérifications, pipeline de revente et résultat réel.
  */
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
@@ -14,8 +13,18 @@ import {
   CONDITIONS,
   type Category,
 } from "@/lib/engine";
-import { deleteAuction, getAuction, type AuctionRecord } from "@/lib/storage";
-import { dateFr } from "@/lib/format";
+import {
+  deleteAuction,
+  getAuction,
+  PIPELINE_STEPS,
+  STATUS_LABELS,
+  toggleChecklistItem,
+  togglePipelineStep,
+  updateOutcome,
+  type AuctionRecord,
+  type AuctionStatus,
+} from "@/lib/storage";
+import { dateFr, euro } from "@/lib/format";
 import { AnalysisPanel } from "@/components/AnalysisPanel";
 
 export default function FichePage() {
@@ -55,6 +64,7 @@ function FicheContent() {
   const conditionLabel =
     CONDITIONS.find((c) => c.value === record.condition)?.label ??
     record.condition;
+  const owned = record.status === "achetee" || record.status === "revendue";
 
   function handleDelete() {
     if (!record || !confirm("Supprimer définitivement cette analyse ?")) return;
@@ -74,6 +84,7 @@ function FicheContent() {
             Analysée le {dateFr(record.createdAt)}
             {record.auctionHouse ? ` · ${record.auctionHouse}` : ""}
             {record.location ? ` · ${record.location}` : ""}
+            {record.endDate ? ` · fin : ${dateFr(record.endDate)}` : ""}
           </p>
         </div>
         <div className="flex gap-2">
@@ -93,43 +104,238 @@ function FicheContent() {
       </div>
 
       <div className="grid lg:grid-cols-[1fr_1.4fr] gap-6 items-start">
-        <section className="rounded-xl border border-edge bg-surface p-4 space-y-2 text-sm">
-          <h2 className="text-sm font-semibold text-muted uppercase tracking-wide mb-3">
-            Informations
-          </h2>
-          <InfoRow
-            label="Catégorie"
-            value={CATEGORY_LABELS[record.category as Category] ?? record.category}
-          />
-          <InfoRow label="État" value={conditionLabel} />
-          <InfoRow label="Maison de vente" value={record.auctionHouse} />
-          <InfoRow label="Localisation" value={record.location} />
-          <InfoRow
-            label="Annonce"
-            value={
-              record.sourceUrl ? (
-                <a
-                  href={record.sourceUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-accent hover:underline break-all"
-                >
-                  Voir l&apos;annonce ↗
-                </a>
-              ) : null
-            }
-          />
-          {record.comments && (
-            <div className="pt-2 border-t border-edge">
-              <div className="text-xs text-muted mb-1">Commentaires</div>
-              <p className="whitespace-pre-wrap">{record.comments}</p>
-            </div>
+        {/* ------------------------- Colonne gauche ---------------------- */}
+        <div className="space-y-5">
+          {/* Photos */}
+          {record.photos.length > 0 && (
+            <section className="rounded-xl border border-edge bg-surface p-4">
+              <h2 className="text-sm font-semibold text-muted uppercase tracking-wide mb-3">
+                📷 Photos
+              </h2>
+              <div className="grid grid-cols-2 gap-2">
+                {record.photos.map((url) => (
+                  <a key={url} href={url} target="_blank" rel="noopener noreferrer">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={url}
+                      alt={record.title}
+                      className="rounded-lg w-full h-32 object-cover border border-edge hover:opacity-90"
+                    />
+                  </a>
+                ))}
+              </div>
+            </section>
           )}
-        </section>
 
+          {/* Informations */}
+          <section className="rounded-xl border border-edge bg-surface p-4 space-y-2 text-sm">
+            <h2 className="text-sm font-semibold text-muted uppercase tracking-wide mb-3">
+              Informations
+            </h2>
+            <InfoRow
+              label="Catégorie"
+              value={CATEGORY_LABELS[record.category as Category] ?? record.category}
+            />
+            <InfoRow label="État" value={conditionLabel} />
+            <InfoRow label="Maison de vente" value={record.auctionHouse} />
+            <InfoRow label="Localisation" value={record.location} />
+            <InfoRow
+              label="Annonce"
+              value={
+                record.sourceUrl ? (
+                  <a
+                    href={record.sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-accent hover:underline break-all"
+                  >
+                    Voir l&apos;annonce ↗
+                  </a>
+                ) : null
+              }
+            />
+            {record.comments && (
+              <div className="pt-2 border-t border-edge">
+                <div className="text-xs text-muted mb-1">Commentaires</div>
+                <p className="whitespace-pre-wrap">{record.comments}</p>
+              </div>
+            )}
+          </section>
+
+          {/* ⚠️ Checklist de vérifications */}
+          <section className="rounded-xl border border-edge bg-surface p-4">
+            <h2 className="text-sm font-semibold text-muted uppercase tracking-wide mb-3">
+              ⚠️ Vérifications avant d&apos;enchérir
+            </h2>
+            <ul className="space-y-1.5 text-sm">
+              {record.checklist.map((item, i) => (
+                <li key={i}>
+                  <label className="flex items-center gap-2 cursor-pointer hover:text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={item.done}
+                      onChange={() =>
+                        setRecord(toggleChecklistItem(record.id, i) ?? record)
+                      }
+                      className="accent-[var(--accent)]"
+                    />
+                    <span className={item.done ? "line-through text-muted" : ""}>
+                      {item.label}
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          {/* Résultat réel */}
+          <OutcomeSection record={record} onChange={setRecord} />
+
+          {/* Pipeline de revente (lots possédés) */}
+          {owned && (
+            <section className="rounded-xl border border-edge bg-surface p-4">
+              <h2 className="text-sm font-semibold text-muted uppercase tracking-wide mb-3">
+                🔄 Suivi de la revente
+              </h2>
+              <ul className="space-y-1.5 text-sm">
+                {PIPELINE_STEPS.map((step) => {
+                  const done = record.pipeline.includes(step.key);
+                  return (
+                    <li key={step.key}>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={done}
+                          onChange={() =>
+                            setRecord(
+                              togglePipelineStep(record.id, step.key) ?? record
+                            )
+                          }
+                          className="accent-[var(--accent)]"
+                        />
+                        <span className={done ? "text-positive" : ""}>
+                          {done ? "✔ " : ""}
+                          {step.label}
+                        </span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden mt-3">
+                <div
+                  className="h-full rounded-full bg-positive transition-all"
+                  style={{
+                    width: `${(record.pipeline.length / PIPELINE_STEPS.length) * 100}%`,
+                  }}
+                />
+              </div>
+            </section>
+          )}
+        </div>
+
+        {/* ------------------------- Analyse ----------------------------- */}
         <AnalysisPanel analysis={analysis} />
       </div>
     </div>
+  );
+}
+
+/** Statut + prix réels : la matière première du portefeuille. */
+function OutcomeSection({
+  record,
+  onChange,
+}: {
+  record: AuctionRecord;
+  onChange: (r: AuctionRecord) => void;
+}) {
+  const apply = (patch: {
+    status?: AuctionStatus;
+    finalPrice?: number | null;
+    soldPrice?: number | null;
+  }) => {
+    const next = updateOutcome(record.id, {
+      status: patch.status ?? record.status,
+      finalPrice:
+        patch.finalPrice !== undefined ? patch.finalPrice : record.finalPrice,
+      soldPrice:
+        patch.soldPrice !== undefined ? patch.soldPrice : record.soldPrice,
+    });
+    if (next) onChange(next);
+  };
+
+  return (
+    <section className="rounded-xl border border-edge bg-surface p-4 space-y-3">
+      <h2 className="text-sm font-semibold text-muted uppercase tracking-wide">
+        🏁 Résultat réel
+      </h2>
+      <div>
+        <label className="field-label">Statut</label>
+        <select
+          className="field"
+          value={record.status}
+          onChange={(e) => apply({ status: e.target.value as AuctionStatus })}
+        >
+          {Object.entries(STATUS_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </div>
+      {(record.status === "achetee" ||
+        record.status === "revendue" ||
+        record.status === "perdue") && (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="field-label">Prix d&apos;adjudication (€)</label>
+            <input
+              className="field"
+              type="number"
+              min={0}
+              value={record.finalPrice ?? ""}
+              placeholder="—"
+              onChange={(e) =>
+                apply({
+                  finalPrice:
+                    e.target.value === "" ? null : Number(e.target.value),
+                })
+              }
+            />
+          </div>
+          {record.status === "revendue" && (
+            <div>
+              <label className="field-label">Prix de revente réel (€)</label>
+              <input
+                className="field"
+                type="number"
+                min={0}
+                value={record.soldPrice ?? ""}
+                placeholder="—"
+                onChange={(e) =>
+                  apply({
+                    soldPrice:
+                      e.target.value === "" ? null : Number(e.target.value),
+                  })
+                }
+              />
+            </div>
+          )}
+        </div>
+      )}
+      {record.status === "revendue" &&
+        record.soldPrice !== null &&
+        record.finalPrice !== null && (
+          <p className="text-sm text-muted">
+            Bénéfice réalisé pris en compte dans votre portefeuille :{" "}
+            <span className="font-semibold text-positive">
+              {euro(record.soldPrice)}
+            </span>{" "}
+            de revente pour un achat adjugé à{" "}
+            <span className="font-semibold">{euro(record.finalPrice)}</span>.
+          </p>
+        )}
+    </section>
   );
 }
 

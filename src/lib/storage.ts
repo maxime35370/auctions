@@ -12,7 +12,12 @@
  * de vérité des règles métier.
  */
 
-import { analyzeAuction, type AuctionInput, type Condition } from "@/lib/engine";
+import {
+  analyzeAuction,
+  defaultChecklist,
+  type AuctionInput,
+  type Condition,
+} from "@/lib/engine";
 import { z } from "zod";
 
 const STORAGE_KEY = "auction-intelligence:auctions:v1";
@@ -24,7 +29,33 @@ export type AuctionStatus =
   | "perdue"
   | "revendue";
 
-/** Une enchère enregistrée (saisie + snapshot des calculs). */
+export const STATUS_LABELS: Record<AuctionStatus, string> = {
+  analysee: "Analysée",
+  suivie: "Suivie",
+  achetee: "Achetée",
+  perdue: "Perdue",
+  revendue: "Revendue",
+};
+
+/** Étapes du pipeline de revente d'un lot possédé (mini-CRM). */
+export const PIPELINE_STEPS = [
+  { key: "nettoye", label: "Nettoyé" },
+  { key: "repare", label: "Réparé / vérifié" },
+  { key: "photographie", label: "Photographié" },
+  { key: "annonce", label: "Annoncé" },
+  { key: "vendu", label: "Vendu" },
+  { key: "expedie", label: "Expédié / remis" },
+  { key: "termine", label: "Terminé" },
+] as const;
+
+export type PipelineStepKey = (typeof PIPELINE_STEPS)[number]["key"];
+
+export interface ChecklistItem {
+  label: string;
+  done: boolean;
+}
+
+/** Une enchère enregistrée (saisie + snapshot des calculs + suivi). */
 export interface AuctionRecord extends AuctionInput {
   id: string;
   createdAt: string; // ISO 8601
@@ -35,6 +66,18 @@ export interface AuctionRecord extends AuctionInput {
   location: string;
   comments: string;
   status: AuctionStatus;
+  /** Date de fin de l'enchère (YYYY-MM-DD, vide si inconnue). */
+  endDate: string;
+  /** URLs des photos du lot. */
+  photos: string[];
+  /** Points à vérifier avant d'enchérir (cochables). */
+  checklist: ChecklistItem[];
+  /** Étapes du pipeline de revente accomplies (lots possédés). */
+  pipeline: PipelineStepKey[];
+  /** Prix d'adjudication réel (si achetée / perdue). */
+  finalPrice: number | null;
+  /** Prix de revente réel (si revendue). */
+  soldPrice: number | null;
   // Snapshot du moteur (recalculé à chaque enregistrement)
   totalCost: number;
   maxBudget: number;
@@ -51,12 +94,17 @@ export type AuctionDraft = AuctionInput & {
   auctionHouse: string;
   location: string;
   comments: string;
+  endDate: string;
+  photos: string[];
   status?: AuctionStatus;
 };
 
 // ---------------------------------------------------------------------------
-// Validation (zod) — utilisée pour l'import JSON et la lecture du stockage
+// Validation (zod) — import JSON et lecture du stockage
 // ---------------------------------------------------------------------------
+
+const num = (max?: number) =>
+  max ? z.number().min(0).max(max).catch(0) : z.number().min(0).catch(0);
 
 const recordSchema = z.object({
   id: z.string().min(1),
@@ -68,21 +116,39 @@ const recordSchema = z.object({
   auctionHouse: z.string().catch(""),
   location: z.string().catch(""),
   comments: z.string().catch(""),
+  endDate: z.string().catch(""),
+  photos: z.array(z.string()).catch([]),
+  checklist: z
+    .array(z.object({ label: z.string(), done: z.boolean() }))
+    .catch([]),
+  pipeline: z
+    .array(z.enum(PIPELINE_STEPS.map((s) => s.key) as [PipelineStepKey, ...PipelineStepKey[]]))
+    .catch([]),
+  finalPrice: z.number().nullable().catch(null),
+  soldPrice: z.number().nullable().catch(null),
   status: z
     .enum(["analysee", "suivie", "achetee", "perdue", "revendue"])
     .catch("analysee"),
-  currentPrice: z.number().min(0).catch(0),
-  buyerFeePct: z.number().min(0).max(100).catch(0),
-  vatPct: z.number().min(0).max(100).catch(0),
-  travelCost: z.number().min(0).catch(0),
-  shippingCost: z.number().min(0).catch(0),
+  currentPrice: num(),
+  buyerFeePct: num(100),
+  vatPct: num(100),
+  travelCost: num(),
+  shippingCost: num(),
+  minProfitTarget: z.number().min(0).catch(100),
+  sellingFeePct: num(100),
+  sellingMiscCost: num(),
   condition: z
     .enum(["neuf", "tres-bon", "bon", "moyen", "a-reparer", "epave"])
     .catch("bon"),
-  refurbHours: z.number().min(0).catch(0),
-  resaleFast: z.number().min(0).catch(0),
-  resaleNormal: z.number().min(0).catch(0),
-  resaleOptimized: z.number().min(0).catch(0),
+  refurbHours: num(),
+  cleaningHours: num(),
+  photoHours: num(),
+  listingHours: num(),
+  packingHours: num(),
+  savHours: num(),
+  resaleFast: num(),
+  resaleNormal: num(),
+  resaleOptimized: num(),
   totalCost: z.number().catch(0),
   maxBudget: z.number().catch(0),
   potentialMargin: z.number().catch(0),
@@ -118,6 +184,15 @@ function writeAll(records: AuctionRecord[]): void {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
 }
 
+function update(id: string, patch: Partial<AuctionRecord>): AuctionRecord | undefined {
+  const records = readAll();
+  const found = records.find((a) => a.id === id);
+  if (!found) return undefined;
+  const next = { ...found, ...patch, updatedAt: new Date().toISOString() };
+  writeAll(records.map((a) => (a.id === id ? next : a)));
+  return next;
+}
+
 /** Toutes les enchères, plus récentes en premier. */
 export function listAuctions(): AuctionRecord[] {
   return readAll().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -134,6 +209,13 @@ export function saveAuction(draft: AuctionDraft, id?: string): AuctionRecord {
   const records = readAll();
   const existing = id ? records.find((a) => a.id === id) : undefined;
 
+  // La checklist suit la catégorie : régénérée si l'enchère est nouvelle ou
+  // si la catégorie change (les cases cochées sont conservées sinon).
+  const checklist =
+    existing && existing.category === draft.category && existing.checklist.length
+      ? existing.checklist
+      : defaultChecklist(draft.category);
+
   const record: AuctionRecord = {
     ...draft,
     condition: draft.condition as Condition,
@@ -141,6 +223,10 @@ export function saveAuction(draft: AuctionDraft, id?: string): AuctionRecord {
     id: existing?.id ?? crypto.randomUUID(),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
+    checklist,
+    pipeline: existing?.pipeline ?? [],
+    finalPrice: existing?.finalPrice ?? null,
+    soldPrice: existing?.soldPrice ?? null,
     totalCost: analysis.totalCost,
     maxBudget: analysis.maxBudget,
     potentialMargin: analysis.potentialMargin,
@@ -158,6 +244,116 @@ export function saveAuction(draft: AuctionDraft, id?: string): AuctionRecord {
 
 export function deleteAuction(id: string): void {
   writeAll(readAll().filter((a) => a.id !== id));
+}
+
+/** Coche / décoche un point de la checklist de vérifications. */
+export function toggleChecklistItem(id: string, index: number): AuctionRecord | undefined {
+  const record = getAuction(id);
+  if (!record || !record.checklist[index]) return record;
+  const checklist = record.checklist.map((item, i) =>
+    i === index ? { ...item, done: !item.done } : item
+  );
+  return update(id, { checklist });
+}
+
+/** Coche / décoche une étape du pipeline de revente. */
+export function togglePipelineStep(id: string, step: PipelineStepKey): AuctionRecord | undefined {
+  const record = getAuction(id);
+  if (!record) return undefined;
+  const pipeline = record.pipeline.includes(step)
+    ? record.pipeline.filter((s) => s !== step)
+    : [...record.pipeline, step];
+  return update(id, { pipeline });
+}
+
+/** Met à jour le résultat réel : statut, prix d'adjudication, prix de revente. */
+export function updateOutcome(
+  id: string,
+  outcome: { status: AuctionStatus; finalPrice: number | null; soldPrice: number | null }
+): AuctionRecord | undefined {
+  return update(id, outcome);
+}
+
+// ---------------------------------------------------------------------------
+// Portefeuille et statistiques (calculés à la volée depuis les données réelles)
+// ---------------------------------------------------------------------------
+
+export interface PortfolioStats {
+  /** Nombre de lots possédés (achetés, pas encore revendus). */
+  ownedCount: number;
+  /** Capital engagé : somme des prix d'achat réels des lots possédés. */
+  invested: number;
+  /** Valeur estimée du stock (revente normale des lots possédés). */
+  stockValue: number;
+  /** Bénéfice latent = valeur du stock − capital engagé. */
+  latentProfit: number;
+  /** Bénéfice réalisé : somme (prix de revente réel − coût réel) des lots revendus. */
+  realizedProfit: number;
+  /** Nombre de ventes terminées. */
+  soldCount: number;
+}
+
+/** Coût d'achat réel d'un lot : prix d'adjudication saisi, sinon coût estimé. */
+function realCost(a: AuctionRecord): number {
+  if (a.finalPrice === null) return a.totalCost;
+  // Le prix d'adjudication réel remplace le prix marteau estimé ; les frais
+  // (acheteur, TVA, déplacement, livraison) s'appliquent de la même façon.
+  const fee = a.finalPrice * (a.buyerFeePct / 100);
+  const vat = (a.finalPrice + fee) * (a.vatPct / 100);
+  return a.finalPrice + fee + vat + a.travelCost + a.shippingCost;
+}
+
+export function portfolioStats(records: AuctionRecord[]): PortfolioStats {
+  const owned = records.filter((a) => a.status === "achetee");
+  const sold = records.filter((a) => a.status === "revendue");
+
+  const invested = owned.reduce((s, a) => s + realCost(a), 0);
+  const stockValue = owned.reduce((s, a) => s + a.resaleNormal, 0);
+  const realizedProfit = sold.reduce(
+    (s, a) => s + (a.soldPrice ?? a.resaleNormal) - realCost(a),
+    0
+  );
+
+  return {
+    ownedCount: owned.length,
+    invested,
+    stockValue,
+    latentProfit: stockValue - invested,
+    realizedProfit,
+    soldCount: sold.length,
+  };
+}
+
+/** Bénéfice réalisé par catégorie (podium des catégories gagnantes). */
+export function realizedByCategory(
+  records: AuctionRecord[]
+): { category: string; profit: number; count: number }[] {
+  const map = new Map<string, { profit: number; count: number }>();
+  for (const a of records) {
+    if (a.status !== "revendue") continue;
+    const entry = map.get(a.category) ?? { profit: 0, count: 0 };
+    entry.profit += (a.soldPrice ?? a.resaleNormal) - realCost(a);
+    entry.count += 1;
+    map.set(a.category, entry);
+  }
+  return [...map.entries()]
+    .map(([category, v]) => ({ category, ...v }))
+    .sort((a, b) => b.profit - a.profit);
+}
+
+/** Enchères suivies dont la date de fin approche (aujourd'hui + `days` jours). */
+export function endingSoon(records: AuctionRecord[], days = 3): AuctionRecord[] {
+  const today = new Date().toISOString().slice(0, 10);
+  const limit = new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+  return records
+    .filter(
+      (a) =>
+        a.endDate &&
+        a.endDate >= today &&
+        a.endDate <= limit &&
+        (a.status === "analysee" || a.status === "suivie")
+    )
+    .sort((a, b) => a.endDate.localeCompare(b.endDate));
 }
 
 // ---------------------------------------------------------------------------

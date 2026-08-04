@@ -11,22 +11,33 @@ sauvegardées / restaurées en JSON depuis la page Historique.
 
 ## Utilisation
 
-- **Tableau de bord** — enchères observées, pépites, ROI moyen, top
-  opportunités, catégories les plus rentables
-- **Nouvelle analyse** — URL ou saisie manuelle (titre, catégorie, maison de
-  vente, prix, frais acheteur, TVA, déplacement, livraison, état,
-  commentaires…) avec analyse **en temps réel**
+- **Tableau de bord** — 🔥 pépite du jour, portefeuille (capital engagé,
+  valeur du stock, bénéfice latent/réalisé), ⚡ enchères qui se terminent
+  bientôt, podium des catégories gagnantes (ventes réelles)
+- **Nouvelle analyse** — saisie complète (coûts, revente, commissions et
+  frais de revente, temps de travail détaillé, photos, date de fin) avec
+  analyse **en temps réel** : jauge, 🛑 budget maximum, 🎯 stratégie
+  conseillée (gain réel, délai, probabilité), score expliqué (✔/✘),
+  📦 plateformes de revente conseillées
+- **Mon stock** — lots possédés avec pipeline de revente (nettoyé → réparé →
+  photographié → annoncé → vendu → expédié → terminé) et vue portefeuille
+- **Fiche** — photos, ⚠️ checklist de vérifications par catégorie (cochable),
+  🏁 résultat réel (statut, prix d'adjudication, prix de revente)
 - **Historique** — toutes les enchères, avec ⬇ Sauvegarder / ⬆ Importer (JSON)
-- **Fiche** — détail complet, modification, suppression
 
 ## Règles métier
 
 - **Frais acheteur** = prix marteau × frais %
 - **TVA** = (prix marteau + frais) × TVA %
 - **Coût total réel** = marteau + frais + TVA + déplacement + livraison
-- **Bénéfice net** = prix de revente − coût total réel (3 scénarios :
+- **Gain brut** = prix de revente − coût total réel (3 scénarios :
   rapide / normal / optimisé)
-- **ROI** = bénéfice net ÷ coût total réel
+- **Gain réel** = gain brut − commission plateforme − frais de revente fixes
+  (essence, cartons, papier bulle… les dépenses qu'on oublie)
+- **ROI** = gain réel ÷ coût total réel
+- **Stratégie conseillée** : la vente rapide est recommandée si elle conserve
+  ≥ 80 % du meilleur gain ; l'optimisée si son supplément dépasse 100 € et
+  25 % ; la normale sinon. Achat déconseillé si aucun scénario n'est rentable.
 - **Budget maximal conseillé** = prix marteau le plus élevé qui préserve un
   ROI de 30 % sur le scénario de revente « normal »
 - **Score /100** = moyenne pondérée de 6 critères : rentabilité (35 %),

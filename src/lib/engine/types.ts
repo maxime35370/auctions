@@ -53,8 +53,24 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   autre: "Autre",
 };
 
+/** Décomposition du temps de travail d'une revente (en heures). */
+export interface TimeBreakdown {
+  /** Remise en état / réparation. */
+  refurbHours: number;
+  /** Nettoyage. */
+  cleaningHours: number;
+  /** Photos. */
+  photoHours: number;
+  /** Rédaction et publication de l'annonce. */
+  listingHours: number;
+  /** Emballage / remise en main propre. */
+  packingHours: number;
+  /** SAV, questions des acheteurs, litiges. */
+  savHours: number;
+}
+
 /** Données d'entrée d'une analyse (saisie utilisateur). */
-export interface AuctionInput {
+export interface AuctionInput extends TimeBreakdown {
   /** Prix actuel de l'enchère (prix marteau envisagé), en €. */
   currentPrice: number;
   /** Frais acheteur, en % du prix marteau. */
@@ -67,8 +83,12 @@ export interface AuctionInput {
   shippingCost: number;
   condition: Condition;
   category: string;
-  /** Temps de remise en état estimé, en heures. */
-  refurbHours: number;
+  /** Gain minimum en dessous duquel l'opération ne vaut pas le déplacement, en €. */
+  minProfitTarget: number;
+  /** Commission de la plateforme de revente, en % du prix de vente. */
+  sellingFeePct: number;
+  /** Frais de revente fixes (essence, cartons, papier bulle, scotch…), en €. */
+  sellingMiscCost: number;
   /** Prix de revente estimés selon trois scénarios, en €. */
   resaleFast: number;
   resaleNormal: number;
@@ -77,15 +97,32 @@ export interface AuctionInput {
 
 /** Détail d'un scénario de revente. */
 export interface ResaleScenario {
-  /** Identifiant du scénario. */
   kind: "rapide" | "normal" | "optimise";
   label: string;
   /** Prix de revente estimé. */
   price: number;
-  /** Bénéfice net = prix de revente − coût total réel. */
+  /** Gain brut = prix de revente − coût total réel. */
+  grossProfit: number;
+  /** Gain réel = gain brut − commission plateforme − frais de revente fixes. */
   netProfit: number;
-  /** ROI = bénéfice net / coût total réel, en %. */
+  /** ROI = gain réel / coût total réel, en %. */
   roi: number;
+  /** Délai de vente indicatif. */
+  timeEstimate: string;
+  /** Probabilité indicative de vendre à ce prix (heuristique, %). */
+  probability: number;
+}
+
+/** Conseil de stratégie produit par le moteur. */
+export interface StrategyAdvice {
+  /** Scénario recommandé — ou null si l'achat est déconseillé. */
+  kind: ResaleScenario["kind"] | null;
+  title: string;
+  /** Explication en une ou deux phrases. */
+  reason: string;
+  gain: number;
+  timeEstimate: string;
+  probability: number;
 }
 
 /** Un critère de notation (0–100) avec son poids dans le score global. */
@@ -104,11 +141,24 @@ export interface ScoreCriterion {
   weight: number;
 }
 
+/** Explication lisible du score : points forts et points faibles. */
+export interface ScoreExplanation {
+  positives: string[];
+  negatives: string[];
+}
+
+/** Plateforme de revente conseillée. */
+export interface PlatformAdvice {
+  name: string;
+  /** Pertinence de 1 à 5 (affichée en étoiles). */
+  stars: number;
+  reason: string;
+}
+
 /** Résultat complet d'une analyse. */
 export interface AuctionAnalysis {
   /** Coût total réel : marteau + frais + TVA + déplacement + livraison. */
   totalCost: number;
-  /** Détail du coût total. */
   costBreakdown: {
     hammerPrice: number;
     buyerFee: number;
@@ -124,15 +174,22 @@ export interface AuctionAnalysis {
   netProfit: number;
   /** ROI du scénario normal, en %. */
   roi: number;
-  /** Les trois scénarios de revente. */
   scenarios: ResaleScenario[];
+  /** Temps total estimé (somme de la décomposition), en heures. */
+  totalTimeHours: number;
+  /** Le meilleur gain atteint-il le gain minimum visé ? */
+  meetsMinProfit: boolean;
+  /** Stratégie recommandée. */
+  strategy: StrategyAdvice;
   /** Score global sur 100. */
   score: number;
   /** Nombre d'étoiles (1 à 5). */
   stars: number;
-  /** Détail des critères de notation. */
   criteria: ScoreCriterion[];
-  /** Verdict lisible. */
+  /** Points forts / points faibles expliquant la note. */
+  explanation: ScoreExplanation;
+  /** Plateformes de revente conseillées pour la catégorie. */
+  platforms: PlatformAdvice[];
   verdict: "pepite" | "bonne-affaire" | "correct" | "a-eviter";
   verdictLabel: string;
 }

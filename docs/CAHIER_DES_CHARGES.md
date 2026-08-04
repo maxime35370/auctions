@@ -92,8 +92,13 @@ Formulaire pré-rempli → moteur d'analyse
   `generic` (JSON-LD schema.org → OpenGraph → heuristiques texte)
 - **Acquisition** : site statique ⇒ l'accès direct dépend du CORS du site
   cible. Modes : fetch direct (quand autorisé) et 📋 presse-papiers
-  (universel). Prévu : proxy Cloudflare Worker optionnel — aucun changement
-  dans les connecteurs
+  (universel). **Principe : ne jamais dépendre d'une API** (quotas, tarifs et
+  autorisations changent) — les API officielles (eBay…) seront un bonus
+  optionnel, jamais le socle
+- **📊 Étude de marché** (`market.ts`) : la voie principale d'alimentation —
+  coller une page de résultats entière → extraction de toutes les annonces
+  (prix + contexte, frais de port filtrés) → résumé (n, min/moyen/maxi,
+  médiane, 🎯 opportunité) → l'utilisateur valide, jamais l'application
 - **Progression** : chaque étape est annoncée (✅ site reconnu, 📷 5 photos
   trouvées, ⚠ frais non trouvés) — jamais de « analyse impossible » sec
 
@@ -113,8 +118,8 @@ devient un client d'API — les pages ne changent pas.
 | V1.2 | Conseils (stratégie, jauge, checklist), stock, portefeuille | ✅ livré |
 | V1.3 | Connecteurs + import démo/presse-papiers + progression | ✅ livré |
 | V2 | **Base de connaissances** : fiches produits, ventes observées multi-sources, courbe de prix, prix suggérés (percentiles), indice de confiance calculé, tendance/indice de marché, analyse intelligente (produit connu), transactions → observations automatiques | ✅ livré |
-| V2.1 | Connecteur Interencheres affiné sur pages réelles ; Agorastore | à venir |
-| V2.2 | Statistiques avancées : temps de vente réels alimentant délais et probabilités des scénarios | à venir |
+| V2.1 | **Moteur statistique** : 🎯 prix d'opportunité (p15/p40, zones d'achat), stabilité (écart-type/CV), moi vs marché, temps moyen de revente réel, observations rejetées (3ᵉ base) ; **📊 Étude de marché** : import en masse d'une page de résultats collée (eBay/Leboncoin/Marketplace) → dizaines d'observations validées d'un clic | ✅ livré |
+| V2.2 | Connecteur Interencheres affiné sur pages réelles ; bibliothèque de snapshots datés comparables ; temps de vente réels alimentant délais et probabilités des scénarios | à venir |
 | V3 | Backend + comptes + synchronisation ; alertes/notifications ; détection automatique du modèle depuis titre/photos | à venir |
 
 ## 9. Qualité

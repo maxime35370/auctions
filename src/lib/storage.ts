@@ -169,7 +169,21 @@ export interface Observation {
   notes: string;
   /** Renseigné quand l'observation vient d'une de mes transactions. */
   auctionId: string | null;
+  /**
+   * Observation rejetée (arnaque, prix aberrant…) : conservée pour mémoire
+   * mais exclue de toutes les statistiques.
+   */
+  rejected: boolean;
+  rejectReason: string;
 }
+
+export const REJECT_REASONS = [
+  "Prix aberrant",
+  "Arnaque probable",
+  "Produit différent",
+  "Doublon",
+  "Autre",
+] as const;
 
 // ---------------------------------------------------------------------------
 // Validation (zod) — import JSON et lecture du stockage
@@ -259,6 +273,8 @@ const observationSchema = z.object({
   url: z.string().catch(""),
   notes: z.string().catch(""),
   auctionId: z.string().nullable().catch(null),
+  rejected: z.boolean().catch(false),
+  rejectReason: z.string().catch(""),
 });
 
 const exportFileSchema = z.object({
@@ -439,6 +455,8 @@ function upsertTransactionObservation(
       url: "",
       notes: `Ma transaction : ${record.title}`,
       auctionId: record.id,
+      rejected: false,
+      rejectReason: "",
     },
   ]);
 }
@@ -495,13 +513,23 @@ export function allObservations(): Observation[] {
   return readObservations();
 }
 
-export type ObservationDraft = Omit<Observation, "id" | "auctionId"> & {
+/** Observations actives d'un produit (les rejetées sont exclues des stats). */
+export function activeObservations(productId: string): Observation[] {
+  return readObservations().filter((o) => o.productId === productId && !o.rejected);
+}
+
+export type ObservationDraft = Omit<
+  Observation,
+  "id" | "auctionId" | "rejected" | "rejectReason"
+> & {
   auctionId?: string | null;
 };
 
 export function addObservation(draft: ObservationDraft): Observation {
   const observation: Observation = {
     auctionId: null,
+    rejected: false,
+    rejectReason: "",
     ...draft,
     id: crypto.randomUUID(),
   };
@@ -511,6 +539,24 @@ export function addObservation(draft: ObservationDraft): Observation {
 
 export function deleteObservation(id: string): void {
   writeObservations(readObservations().filter((o) => o.id !== id));
+}
+
+/** Rejette une observation (exclue des stats, conservée pour mémoire). */
+export function rejectObservation(id: string, reason: string): void {
+  writeObservations(
+    readObservations().map((o) =>
+      o.id === id ? { ...o, rejected: true, rejectReason: reason } : o
+    )
+  );
+}
+
+/** Réintègre une observation rejetée. */
+export function restoreObservation(id: string): void {
+  writeObservations(
+    readObservations().map((o) =>
+      o.id === id ? { ...o, rejected: false, rejectReason: "" } : o
+    )
+  );
 }
 
 /** Produits dont le nom (ou un alias) correspond au titre d'une annonce. */

@@ -192,6 +192,156 @@ export function marketIndex(
     .sort((a, b) => (b.trendPct ?? -Infinity) - (a.trendPct ?? -Infinity));
 }
 
+// ---------------------------------------------------------------------------
+// Moteur statistique : prix d'opportunité, stabilité, mes performances
+// ---------------------------------------------------------------------------
+
+/** Observation enrichie (source + lien transaction) pour les stats avancées. */
+export interface ExtendedObservation extends ObservationInput {
+  source?: string;
+  auctionId?: string | null;
+}
+
+/**
+ * 🎯 Prix d'opportunité — répond à « à partir de quel prix j'achète ? ».
+ *
+ * Zones calculées sur les prix observés (adjudications si ≥ 5, sinon tout) :
+ *  - excellente affaire : sous le percentile 15 ;
+ *  - intéressant : entre p15 et p40 ;
+ *  - marge faible : au-dessus de p40.
+ * Les seuils sont des paramètres — ajustables avec l'expérience.
+ */
+export interface OpportunityZones {
+  /** Sous ce prix : excellente affaire (p15). */
+  opportunityPrice: number;
+  /** Jusqu'à ce prix : encore intéressant (p40). */
+  fairPrice: number;
+  /** Base de calcul utilisée. */
+  basis: "adjudications" | "toutes-observations";
+  sampleSize: number;
+}
+
+export function opportunityZones(
+  observations: ExtendedObservation[],
+  pOpportunity = 0.15,
+  pFair = 0.4
+): OpportunityZones | undefined {
+  const valid = observations.filter((o) => o.price > 0);
+  if (valid.length < 3) return undefined;
+  const auctions = valid.filter((o) => o.kind === "enchere");
+  const useAuctions = auctions.length >= 5;
+  const prices = (useAuctions ? auctions : valid)
+    .map((o) => o.price)
+    .sort((a, b) => a - b);
+  return {
+    opportunityPrice: percentile(prices, pOpportunity),
+    fairPrice: percentile(prices, pFair),
+    basis: useAuctions ? "adjudications" : "toutes-observations",
+    sampleSize: prices.length,
+  };
+}
+
+/** Position d'un prix d'achat dans les zones d'opportunité. */
+export function opportunityVerdict(
+  price: number,
+  zones: OpportunityZones
+): { level: "excellent" | "interessant" | "faible"; label: string } {
+  if (price <= zones.opportunityPrice)
+    return { level: "excellent", label: "🎯 Zone d'opportunité — excellente affaire" };
+  if (price <= zones.fairPrice)
+    return { level: "interessant", label: "🟡 Prix intéressant" };
+  return { level: "faible", label: "🔴 Au-dessus du marché — marge faible" };
+}
+
+/** Stabilité du marché : écart-type et coefficient de variation. */
+export interface PriceStability {
+  stdDev: number;
+  /** Coefficient de variation (écart-type / moyenne), en %. */
+  cvPct: number;
+  label: "stable" | "variable" | "tres-variable";
+}
+
+export function priceStability(
+  observations: ObservationInput[]
+): PriceStability | undefined {
+  const prices = observations.filter((o) => o.price > 0).map((o) => o.price);
+  if (prices.length < 3) return undefined;
+  const avg = prices.reduce((s, x) => s + x, 0) / prices.length;
+  const stdDev = Math.sqrt(
+    prices.reduce((s, x) => s + (x - avg) ** 2, 0) / prices.length
+  );
+  const cvPct = round((stdDev / avg) * 100);
+  return {
+    stdDev: round(stdDev),
+    cvPct,
+    label: cvPct < 15 ? "stable" : cvPct < 30 ? "variable" : "tres-variable",
+  };
+}
+
+/**
+ * Mes performances vs le marché : mes prix de vente (source « moi »)
+ * comparés à la médiane des ventes observées ailleurs.
+ * → « Je revends les Raspberry Pi 12 % plus cher que la moyenne. »
+ */
+export interface MyVsMarket {
+  myAvgSale: number;
+  marketMedianSale: number;
+  diffPct: number;
+  mySaleCount: number;
+  marketSaleCount: number;
+}
+
+export function myVsMarket(
+  observations: ExtendedObservation[]
+): MyVsMarket | undefined {
+  const sales = observations.filter((o) => o.kind === "vente" && o.price > 0);
+  const mine = sales.filter((o) => o.source === "moi");
+  const market = sales.filter((o) => o.source !== "moi");
+  if (mine.length === 0 || market.length < 2) return undefined;
+
+  const myAvg = mine.reduce((s, o) => s + o.price, 0) / mine.length;
+  const marketMedian = percentile(
+    market.map((o) => o.price).sort((a, b) => a - b),
+    0.5
+  );
+  if (marketMedian <= 0) return undefined;
+  return {
+    myAvgSale: round(myAvg),
+    marketMedianSale: marketMedian,
+    diffPct: round(((myAvg - marketMedian) / marketMedian) * 100),
+    mySaleCount: mine.length,
+    marketSaleCount: market.length,
+  };
+}
+
+/**
+ * ⚡ Temps moyen de revente, calculé sur MES transactions : pour chaque
+ * enchère (auctionId), délai entre l'adjudication et la vente.
+ */
+export function averageSaleDelay(
+  observations: ExtendedObservation[]
+): { avgDays: number; count: number } | undefined {
+  const byAuction = new Map<string, { bought?: string; sold?: string }>();
+  for (const o of observations) {
+    if (!o.auctionId) continue;
+    const entry = byAuction.get(o.auctionId) ?? {};
+    if (o.kind === "enchere") entry.bought = o.date;
+    if (o.kind === "vente") entry.sold = o.date;
+    byAuction.set(o.auctionId, entry);
+  }
+  const delays: number[] = [];
+  for (const { bought, sold } of byAuction.values()) {
+    if (!bought || !sold) continue;
+    const days = (new Date(sold).getTime() - new Date(bought).getTime()) / DAY;
+    if (days >= 0) delays.push(days);
+  }
+  if (delays.length === 0) return undefined;
+  return {
+    avgDays: Math.round(delays.reduce((s, d) => s + d, 0) / delays.length),
+    count: delays.length,
+  };
+}
+
 /**
  * Équipement / accessoire d'un produit avec sa plus-value.
  * Ex. Raspberry Pi : alimentation officielle +10 €, boîtier +10 €,

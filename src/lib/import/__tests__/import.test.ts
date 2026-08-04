@@ -1,0 +1,132 @@
+import { describe, expect, it } from "vitest";
+import {
+  extractFromText,
+  findBuyerFeePct,
+  findEndDate,
+  findPriceNear,
+  parseFrenchDate,
+  parseFrenchNumber,
+} from "../parse";
+import { mergeData } from "../connectors/generic";
+import { detectConnector } from "../registry";
+import { toDraft } from "../importer";
+import { countFields } from "../types";
+
+describe("parse — nombres et prix français", () => {
+  it("convertit les formats français", () => {
+    expect(parseFrenchNumber("1 234,56")).toBe(1234.56);
+    expect(parseFrenchNumber("1.234,56")).toBe(1234.56);
+    expect(parseFrenchNumber("1234.56")).toBe(1234.56);
+    expect(parseFrenchNumber("120")).toBe(120);
+  });
+
+  it("trouve un prix proche d'un mot-clé", () => {
+    const text = "Lot n°42 — Enchère actuelle : 1 250 € — frais en sus";
+    expect(findPriceNear(text, ["ench[eè]re actuelle"])).toBe(1250);
+    expect(findPriceNear(text, ["mise [aà] prix"])).toBeUndefined();
+  });
+
+  it("trouve les frais acheteur en %", () => {
+    expect(findBuyerFeePct("Frais de vente : 24,6 % TTC")).toBe(24.6);
+    expect(findBuyerFeePct("frais acheteur de 20% en sus")).toBe(20);
+    expect(findBuyerFeePct("aucune mention")).toBeUndefined();
+    // Un pourcentage aberrant (> 50 %) est rejeté
+    expect(findBuyerFeePct("frais : 99 %")).toBeUndefined();
+  });
+});
+
+describe("parse — dates françaises", () => {
+  it("convertit les dates textuelles et numériques", () => {
+    expect(parseFrenchDate("12 août 2026")).toBe("2026-08-12");
+    expect(parseFrenchDate("3 février 2027")).toBe("2027-02-03");
+    expect(parseFrenchDate("12/08/2026")).toBe("2026-08-12");
+    expect(parseFrenchDate("2026-08-12")).toBe("2026-08-12");
+  });
+
+  it("trouve la date de fin près des mots-clés", () => {
+    expect(findEndDate("Clôture de la vente : 12 août 2026 à 14h")).toBe("2026-08-12");
+    expect(findEndDate("Fin le 05/09/2026")).toBe("2026-09-05");
+    expect(findEndDate("aucune date")).toBeUndefined();
+  });
+});
+
+describe("extractFromText — mode presse-papiers", () => {
+  const page = `
+    Interencheres - vente aux enchères
+    Lot de 2 imprimantes 3D Creality Ender 3 V2
+    Enchère actuelle : 120 €
+    Frais acheteur : 20 % TTC
+    Clôture : 12 août 2026
+    https://cdn.example.com/photos/lot42-1.jpg
+    https://cdn.example.com/photos/lot42-2.jpg
+  `;
+
+  it("extrait titre, prix, frais, date et photos", () => {
+    const d = extractFromText(page);
+    expect(d.title).toContain("Creality Ender 3");
+    expect(d.currentPrice).toBe(120);
+    expect(d.buyerFeePct).toBe(20);
+    expect(d.endDate).toBe("2026-08-12");
+    expect(d.photos).toHaveLength(2);
+  });
+});
+
+describe("registry — détection du connecteur", () => {
+  it("choisit le bon connecteur selon l'URL", () => {
+    expect(detectConnector("demo:ender3").id).toBe("demo");
+    expect(detectConnector("https://www.interencheres.com/lot/42").id).toBe("interencheres");
+    expect(detectConnector("https://exemple.fr/annonce").id).toBe("generic");
+    expect(detectConnector("pas-une-url").id).toBe("generic");
+  });
+});
+
+describe("importer — conversion en brouillon", () => {
+  it("mappe les données extraites vers le formulaire", () => {
+    const draft = toDraft({
+      title: "Canon EF 100-400mm f/4.5-5.6L IS II USM",
+      currentPrice: 720,
+      buyerFeePct: 24,
+      rawCondition: "Occasion",
+      photos: ["https://x/1.jpg"],
+      endDate: "2026-08-12",
+      sourceUrl: "https://www.interencheres.com/lot/1",
+    });
+    expect(draft.category).toBe("photo"); // reconnu via « Canon »
+    expect(draft.currentPrice).toBe(720);
+    expect(draft.buyerFeePct).toBe(24);
+    expect(draft.condition).toBe("bon");
+    expect(draft.endDate).toBe("2026-08-12");
+  });
+
+  it("devine la catégorie informatique et l'état à réparer", () => {
+    const draft = toDraft({
+      title: "Lot imprimantes 3D en panne",
+      rawCondition: "HS pour pièces",
+    });
+    expect(draft.category).toBe("informatique");
+    expect(draft.condition).toBe("a-reparer");
+  });
+
+  it("applique des défauts sûrs quand tout manque", () => {
+    const draft = toDraft({});
+    expect(draft.buyerFeePct).toBe(20);
+    expect(draft.category).toBe("autre");
+  });
+});
+
+describe("mergeData — fusion des sources", () => {
+  it("la première valeur définie gagne, les vides sont ignorés", () => {
+    const merged = mergeData(
+      { title: "", currentPrice: undefined },
+      { title: "JSON-LD", currentPrice: 100, photos: [] },
+      { title: "OpenGraph", photos: ["a.jpg"] }
+    );
+    expect(merged.title).toBe("JSON-LD");
+    expect(merged.currentPrice).toBe(100);
+    expect(merged.photos).toEqual(["a.jpg"]);
+  });
+
+  it("countFields compte les champs utiles", () => {
+    expect(countFields({ title: "x", photos: [], currentPrice: 5 })).toBe(2);
+  });
+});

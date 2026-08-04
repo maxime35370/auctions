@@ -92,9 +92,9 @@ export function AuctionForm({
         <Section title="Annonce">
           <div>
             <label className="field-label">
-              URL de l&apos;enchère{" "}
+              URL de l&apos;annonce{" "}
               <span className="text-muted">
-                (analyse automatique prévue dans une future version)
+                (remplie automatiquement par l&apos;import ⚡ ci-dessus)
               </span>
             </label>
             <input

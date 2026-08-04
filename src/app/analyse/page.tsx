@@ -2,13 +2,15 @@
 
 /**
  * Nouvelle analyse — ou édition si l'URL contient ?id=<enchère>.
- * (Le paramètre de requête remplace les routes dynamiques, incompatibles
- * avec l'export statique GitHub Pages.)
+ * En création, l'assistant d'import (URL / presse-papiers / démo) pré-remplit
+ * le formulaire ; le paramètre de requête remplace les routes dynamiques,
+ * incompatibles avec l'export statique GitHub Pages.
  */
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AuctionForm } from "@/components/AuctionForm";
-import { getAuction, type AuctionRecord } from "@/lib/storage";
+import { ImportAssistant } from "@/components/ImportAssistant";
+import { getAuction, type AuctionDraft, type AuctionRecord } from "@/lib/storage";
 
 export default function AnalysePage() {
   return (
@@ -22,6 +24,8 @@ function AnalyseContent() {
   const searchParams = useSearchParams();
   const editId = searchParams.get("id");
   const [record, setRecord] = useState<AuctionRecord | null>(null);
+  const [imported, setImported] = useState<Partial<AuctionDraft> | null>(null);
+  const [importCount, setImportCount] = useState(0);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -38,14 +42,25 @@ function AnalyseContent() {
           {record ? "Modifier l'analyse" : "Analyser une enchère"}
         </h1>
         <p className="text-sm text-muted mt-1">
-          Collez l&apos;URL de l&apos;annonce puis saisissez les informations :
-          l&apos;analyse se met à jour en temps réel.
+          {record
+            ? "Modifiez les informations : l'analyse se met à jour en temps réel."
+            : "Importez une annonce ou saisissez les informations : l'analyse se met à jour en temps réel."}
         </p>
       </div>
+
+      {!record && (
+        <ImportAssistant
+          onImported={(draft) => {
+            setImported(draft);
+            setImportCount((n) => n + 1); // remonte le formulaire avec les données
+          }}
+        />
+      )}
+
       <AuctionForm
-        key={record?.id ?? "new"}
+        key={record?.id ?? `import-${importCount}`}
         auctionId={record?.id}
-        initialValues={record ?? undefined}
+        initialValues={record ?? imported ?? undefined}
       />
     </div>
   );

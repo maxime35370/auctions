@@ -11,6 +11,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  accessoryBonus,
+  adjustSuggestions,
   analyzeAuction,
   CATEGORIES,
   CATEGORY_LABELS,
@@ -77,6 +79,15 @@ export function AuctionForm({
     const obs = allObservations().filter((o) => o.productId === linkedProduct.id);
     return productStats(obs);
   }, [linkedProduct]);
+  // Équipements inclus dans ce lot → plus-value sur les prix suggérés.
+  const included = values.accessoriesIncluded ?? [];
+  const bonus = linkedProduct
+    ? accessoryBonus(linkedProduct.accessories, included)
+    : 0;
+  const adjusted =
+    knownStats && knownStats.suggestedNormal !== undefined
+      ? adjustSuggestions(knownStats, bonus)
+      : null;
 
   const analysis = useMemo(() => analyzeAuction(values), [values]);
   const totalHours =
@@ -253,13 +264,50 @@ export function AuctionForm({
                   </button>
                 </div>
               </div>
-              {knownStats?.suggestedNormal !== undefined ? (
+              {linkedProduct.accessories.length > 0 && (
+                <div className="rounded-lg border border-edge bg-surface-2 p-3 space-y-1.5">
+                  <p className="text-xs font-semibold text-muted uppercase tracking-wide">
+                    🧩 Inclus dans ce lot ?
+                  </p>
+                  {linkedProduct.accessories.map((a) => (
+                    <label
+                      key={a.label}
+                      className="flex items-center gap-2 text-sm cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        className="accent-[var(--accent)]"
+                        checked={included.includes(a.label)}
+                        onChange={(e) =>
+                          set(
+                            "accessoriesIncluded",
+                            e.target.checked
+                              ? [...included, a.label]
+                              : included.filter((l) => l !== a.label)
+                          )
+                        }
+                      />
+                      <span className="flex-1">{a.label}</span>
+                      <span className="text-positive text-xs">+{a.delta} €</span>
+                    </label>
+                  ))}
+                  {bonus > 0 && (
+                    <p className="text-xs text-positive pt-1 border-t border-edge">
+                      Plus-value des équipements inclus : +{bonus} €
+                    </p>
+                  )}
+                </div>
+              )}
+              {adjusted && knownStats ? (
                 <div className="rounded-lg border border-accent/40 bg-accent/5 p-3 space-y-2 text-sm">
                   <p>
                     💡 Analyse intelligente : prix suggérés{" "}
-                    <b>{euro(knownStats.suggestedFast!)}</b> /{" "}
-                    <b>{euro(knownStats.suggestedNormal)}</b> /{" "}
-                    <b>{euro(knownStats.suggestedPremium!)}</b>
+                    <b>{euro(adjusted.suggestedFast!)}</b> /{" "}
+                    <b>{euro(adjusted.suggestedNormal!)}</b> /{" "}
+                    <b>{euro(adjusted.suggestedPremium!)}</b>
+                    {bonus > 0 && (
+                      <span className="text-positive"> (équipements inclus : +{bonus} €)</span>
+                    )}
                     {knownStats.typicalAuctionPrice !== undefined && (
                       <span className="text-muted">
                         {" "}
@@ -272,14 +320,14 @@ export function AuctionForm({
                     onClick={() =>
                       setValues((v) => ({
                         ...v,
-                        resaleFast: knownStats.suggestedFast!,
-                        resaleNormal: knownStats.suggestedNormal!,
-                        resaleOptimized: knownStats.suggestedPremium!,
+                        resaleFast: adjusted.suggestedFast!,
+                        resaleNormal: adjusted.suggestedNormal!,
+                        resaleOptimized: adjusted.suggestedPremium!,
                       }))
                     }
                     className="rounded-lg bg-accent text-background font-semibold px-3 py-1.5 text-xs hover:opacity-90 transition-opacity"
                   >
-                    Utiliser les prix connus
+                    Utiliser les prix connus{bonus > 0 ? " (ajustés)" : ""}
                   </button>
                 </div>
               ) : (

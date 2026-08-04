@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  accessoryBonus,
+  adjustSuggestions,
   computeConfidence,
   computeTrend,
   marketIndex,
@@ -109,6 +111,36 @@ describe("computeConfidence — indice de confiance justifié", () => {
     );
     expect(confidence).toBeLessThan(50);
     expect(reasons.join(" ")).toContain("anciennes");
+  });
+});
+
+describe("accessoryBonus — équipements avec plus-value", () => {
+  const ACCESSORIES = [
+    { label: "Alimentation officielle", delta: 10 },
+    { label: "Boîtier", delta: 10 },
+    { label: "Carte SD", delta: 10 },
+    { label: "Refroidissement actif", delta: 8 },
+  ];
+
+  it("additionne la plus-value des équipements cochés uniquement", () => {
+    expect(accessoryBonus(ACCESSORIES, [])).toBe(0);
+    expect(accessoryBonus(ACCESSORIES, ["Boîtier", "Carte SD"])).toBe(20);
+    expect(accessoryBonus(ACCESSORIES, ["Inexistant"])).toBe(0);
+  });
+
+  it("ajuste les prix suggérés du produit", () => {
+    const stats = productStats(
+      [obs("2026-05-01", 100), obs("2026-06-01", 100), obs("2026-07-01", 100)],
+      NOW
+    );
+    const adjusted = adjustSuggestions(stats, 38);
+    expect(adjusted.suggestedNormal).toBe(138);
+    expect(adjusted.suggestedFast).toBe(138);
+  });
+
+  it("laisse undefined quand il n'y a pas de suggestion", () => {
+    const adjusted = adjustSuggestions(productStats([], NOW), 20);
+    expect(adjusted.suggestedNormal).toBeUndefined();
   });
 });
 

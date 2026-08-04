@@ -154,6 +154,14 @@ function FicheContent() {
               }
             />
             <InfoRow
+              label="Équipements inclus"
+              value={
+                record.accessoriesIncluded.length > 0
+                  ? record.accessoriesIncluded.join(", ")
+                  : null
+              }
+            />
+            <InfoRow
               label="Annonce"
               value={
                 record.sourceUrl ? (

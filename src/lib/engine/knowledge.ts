@@ -192,6 +192,41 @@ export function marketIndex(
     .sort((a, b) => (b.trendPct ?? -Infinity) - (a.trendPct ?? -Infinity));
 }
 
+/**
+ * Équipement / accessoire d'un produit avec sa plus-value.
+ * Ex. Raspberry Pi : alimentation officielle +10 €, boîtier +10 €,
+ * carte SD +10 €, refroidissement actif +8 €…
+ */
+export interface ProductAccessory {
+  label: string;
+  /** Plus-value sur le prix de revente, en €. */
+  delta: number;
+}
+
+/** Somme des plus-values des équipements inclus dans un lot. */
+export function accessoryBonus(
+  accessories: ProductAccessory[],
+  includedLabels: string[]
+): number {
+  const included = new Set(includedLabels);
+  return accessories
+    .filter((a) => included.has(a.label))
+    .reduce((sum, a) => sum + a.delta, 0);
+}
+
+/** Applique la plus-value des équipements aux prix suggérés d'un produit. */
+export function adjustSuggestions(
+  stats: ProductStats,
+  bonus: number
+): Pick<ProductStats, "suggestedFast" | "suggestedNormal" | "suggestedPremium"> {
+  const add = (v: number | undefined) => (v === undefined ? undefined : v + bonus);
+  return {
+    suggestedFast: add(stats.suggestedFast),
+    suggestedNormal: add(stats.suggestedNormal),
+    suggestedPremium: add(stats.suggestedPremium),
+  };
+}
+
 /** Normalise un texte pour la mise en correspondance produit ↔ titre. */
 export function normalizeForMatch(s: string): string {
   return s

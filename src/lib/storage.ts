@@ -83,6 +83,8 @@ export interface AuctionRecord extends AuctionInput {
   soldPrice: number | null;
   /** Fiche produit liée (base de connaissances), si identifiée. */
   productId: string | null;
+  /** Équipements du produit inclus dans ce lot (labels cochés). */
+  accessoriesIncluded: string[];
   // Snapshot du moteur (recalculé à chaque enregistrement)
   totalCost: number;
   maxBudget: number;
@@ -103,6 +105,7 @@ export type AuctionDraft = AuctionInput & {
   photos: string[];
   status?: AuctionStatus;
   productId?: string | null;
+  accessoriesIncluded?: string[];
 };
 
 // ---------------------------------------------------------------------------
@@ -124,6 +127,11 @@ export interface Product {
   notes: string;
   /** Points à vérifier propres à ce produit (un par ligne). */
   checkPoints: string;
+  /**
+   * Équipements avec plus-value (ex. « Alimentation officielle » +10 €).
+   * Cochés lot par lot dans l'analyse, ils ajustent l'estimation.
+   */
+  accessories: { label: string; delta: number }[];
 }
 
 export type ObservationSource =
@@ -191,6 +199,7 @@ const recordSchema = z.object({
   finalPrice: z.number().nullable().catch(null),
   soldPrice: z.number().nullable().catch(null),
   productId: z.string().nullable().catch(null),
+  accessoriesIncluded: z.array(z.string()).catch([]),
   status: z
     .enum(["analysee", "suivie", "achetee", "perdue", "revendue"])
     .catch("analysee"),
@@ -233,6 +242,9 @@ const productSchema = z.object({
   priceNew: z.number().nullable().catch(null),
   notes: z.string().catch(""),
   checkPoints: z.string().catch(""),
+  accessories: z
+    .array(z.object({ label: z.string().min(1), delta: z.number() }))
+    .catch([]),
 });
 
 const observationSchema = z.object({
@@ -334,6 +346,8 @@ export function saveAuction(draft: AuctionDraft, id?: string): AuctionRecord {
     finalPrice: existing?.finalPrice ?? null,
     soldPrice: existing?.soldPrice ?? null,
     productId: draft.productId ?? existing?.productId ?? null,
+    accessoriesIncluded:
+      draft.accessoriesIncluded ?? existing?.accessoriesIncluded ?? [],
     totalCost: analysis.totalCost,
     maxBudget: analysis.maxBudget,
     potentialMargin: analysis.potentialMargin,

@@ -6,6 +6,7 @@
 import type { AuctionAnalysis } from "@/lib/engine";
 import { euro, hours, pct, signedEuro } from "@/lib/format";
 import { ScoreStars } from "./ScoreStars";
+import { ProvenanceBadge } from "./KnowledgeBadges";
 
 const VERDICT_META: Record<
   AuctionAnalysis["verdict"],
@@ -97,7 +98,15 @@ export function AnalysisPanel({ analysis }: { analysis: AuctionAnalysis }) {
             </div>
             <div className="rounded-lg bg-surface p-2">
               <div className="text-xs text-muted">Probabilité</div>
-              <div className="font-bold">{a.strategy.probability} %</div>
+              <div className="font-bold">
+                {a.strategy.probability} %{" "}
+                <ProvenanceBadge
+                  value={
+                    a.scenarios.find((s) => s.kind === a.strategy.kind)
+                      ?.probabilityProvenance
+                  }
+                />
+              </div>
             </div>
           </div>
         )}
@@ -208,7 +217,8 @@ export function AnalysisPanel({ analysis }: { analysis: AuctionAnalysis }) {
                   {c.label}{" "}
                   <span className="text-muted">
                     ({Math.round(c.weight * 100)} %)
-                  </span>
+                  </span>{" "}
+                  <ProvenanceBadge value={c.provenance} />
                 </span>
                 <span className="font-medium">{c.value}/100</span>
               </div>

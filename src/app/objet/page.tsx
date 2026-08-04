@@ -12,8 +12,10 @@ import {
   averageSaleDelay,
   CATEGORIES,
   CATEGORY_LABELS,
+  dataMaturity,
   myVsMarket,
   opportunityZones,
+  platformStats,
   priceStability,
   productStats,
   type Category,
@@ -39,6 +41,7 @@ import {
 import { dateFr, euro } from "@/lib/format";
 import { PriceChart } from "@/components/PriceChart";
 import { MarketStudy } from "@/components/MarketStudy";
+import { MaturityBadge } from "@/components/KnowledgeBadges";
 import { ConfidenceBadge, Trend } from "@/components/KnowledgeBadges";
 import { ScoreStars } from "@/components/ScoreStars";
 
@@ -90,6 +93,8 @@ function ObjetContent() {
   const stability = priceStability(active);
   const performance = myVsMarket(active);
   const saleDelay = averageSaleDelay(active);
+  const maturity = dataMaturity(active);
+  const platforms = platformStats(active);
 
   function handleDelete() {
     if (!product) return;
@@ -113,6 +118,7 @@ function ObjetContent() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <MaturityBadge score={maturity.score} level={maturity.level} />
           <ConfidenceBadge value={stats.confidence} />
           <button
             onClick={handleDelete}
@@ -238,19 +244,77 @@ function ObjetContent() {
         </div>
       )}
 
-      {/* Indice de confiance justifié */}
-      <div className="rounded-xl border border-edge bg-surface p-4">
-        <h2 className="text-sm font-semibold text-muted uppercase tracking-wide mb-2">
-          Indice de confiance : {stats.confidence} %
-        </h2>
-        <ul className="text-sm space-y-1">
-          {stats.confidenceReasons.map((r) => (
-            <li key={r} className="text-muted">
-              • {r}
-            </li>
-          ))}
-        </ul>
+      {/* Maturité des données + indice de confiance justifié */}
+      <div className="grid md:grid-cols-2 gap-4">
+        <div className="rounded-xl border border-edge bg-surface p-4">
+          <h2 className="text-sm font-semibold text-muted uppercase tracking-wide mb-2">
+            Maturité des données : {maturity.score} %
+          </h2>
+          <ul className="text-sm space-y-1 text-muted">
+            <li>• {maturity.observations} observation{maturity.observations > 1 ? "s" : ""}</li>
+            <li>• {maturity.sales} vente{maturity.sales > 1 ? "s" : ""} conclue{maturity.sales > 1 ? "s" : ""}</li>
+            <li>• {maturity.myTransactions} transaction{maturity.myTransactions > 1 ? "s" : ""} personnelle{maturity.myTransactions > 1 ? "s" : ""}</li>
+          </ul>
+          <p className="text-[11px] text-muted mt-2">
+            Plus la maturité est haute, plus les recommandations reposent sur
+            des mesures réelles plutôt que sur des hypothèses.
+          </p>
+        </div>
+        <div className="rounded-xl border border-edge bg-surface p-4">
+          <h2 className="text-sm font-semibold text-muted uppercase tracking-wide mb-2">
+            Indice de confiance : {stats.confidence} %
+          </h2>
+          <ul className="text-sm space-y-1">
+            {stats.confidenceReasons.map((r) => (
+              <li key={r} className="text-muted">
+                • {r}
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
+
+      {/* 📦 Comparateur de plateformes — mesuré sur les observations */}
+      {platforms.length >= 2 && (
+        <div className="rounded-xl border border-edge bg-surface p-4">
+          <h2 className="text-sm font-semibold text-muted uppercase tracking-wide mb-3">
+            📦 Comparateur de plateformes{" "}
+            <span className="normal-case font-normal">(mesuré sur tes observations)</span>
+          </h2>
+          <table className="w-full text-sm">
+            <thead className="text-xs text-muted border-b border-edge">
+              <tr>
+                <th className="text-left font-medium py-2">Plateforme</th>
+                <th className="text-right font-medium py-2">Annonces</th>
+                <th className="text-right font-medium py-2">Prix moyen</th>
+                <th className="text-right font-medium py-2">Médiane</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-edge">
+              {platforms.map((p) => (
+                <tr key={p.source}>
+                  <td className="py-1.5 capitalize">{p.source}</td>
+                  <td className="py-1.5 text-right">{p.count}</td>
+                  <td className="py-1.5 text-right font-medium">{euro(p.avg)}</td>
+                  <td className="py-1.5 text-right">{euro(p.median)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="text-xs text-muted mt-2">
+            💡 Pour maximiser le prix →{" "}
+            <b className="capitalize">{platforms[0].source}</b>
+            {platforms.length > 1 && (
+              <>
+                {" "}
+                · les prix les plus bas s&apos;observent sur{" "}
+                <b className="capitalize">{platforms[platforms.length - 1].source}</b>
+              </>
+            )}
+            . Les délais moyens par plateforme viendront de tes ventes réelles.
+          </p>
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-2 gap-6 items-start">
         {/* Courbe des prix */}

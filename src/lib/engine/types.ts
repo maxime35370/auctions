@@ -109,8 +109,10 @@ export interface ResaleScenario {
   roi: number;
   /** Délai de vente indicatif. */
   timeEstimate: string;
-  /** Probabilité indicative de vendre à ce prix (heuristique, %). */
+  /** Probabilité de vendre à ce prix (%) — heuristique ou mesurée. */
   probability: number;
+  /** Provenance de la probabilité (absent = heuristique). */
+  probabilityProvenance?: "mesure" | "estime" | "heuristique";
 }
 
 /** Conseil de stratégie produit par le moteur. */
@@ -139,6 +141,24 @@ export interface ScoreCriterion {
   value: number;
   /** Poids du critère dans le score global (somme des poids = 1). */
   weight: number;
+  /** Provenance de la note (absent = heuristique). */
+  provenance?: "mesure" | "estime" | "heuristique";
+}
+
+/**
+ * Contexte de connaissances injecté dans l'analyse quand un produit est lié :
+ * les valeurs mesurées remplacent automatiquement les heuristiques.
+ */
+export interface KnowledgeContext {
+  /** Popularité mesurée (volume réel d'observations sur 12 mois). */
+  popularity?: { score: number; provenance: "mesure" | "estime" };
+  /** Probabilités mesurées des scénarios (délais réels de mes ventes). */
+  probabilities?: {
+    provenance: "mesure" | "estime";
+    rapidePct: number;
+    normalPct: number;
+    optimisePct: number;
+  };
 }
 
 /** Explication lisible du score : points forts et points faibles. */

@@ -18,10 +18,17 @@ export * from "./knowledge";
 export { TARGET_ROI } from "./costs";
 export { checklistFor, recommendPlatforms } from "./advice";
 
-/** Analyse complète d'une enchère à partir des données saisies. */
-export function analyzeAuction(input: AuctionInput): AuctionAnalysis {
+/**
+ * Analyse complète d'une enchère à partir des données saisies.
+ * Le contexte de connaissances (produit lié) fait passer les heuristiques en
+ * valeurs mesurées : popularité réelle, probabilités réelles des scénarios.
+ */
+export function analyzeAuction(
+  input: AuctionInput,
+  knowledge?: import("./types").KnowledgeContext
+): AuctionAnalysis {
   const { totalCost, ...costBreakdown } = computeCosts(input);
-  const scenarios = computeScenarios(input, totalCost);
+  const scenarios = computeScenarios(input, totalCost, knowledge?.probabilities);
   const normal = scenarios.find((s) => s.kind === "normal")!;
   const totalTimeHours = totalTime(input);
 
@@ -30,7 +37,8 @@ export function analyzeAuction(input: AuctionInput): AuctionAnalysis {
     input,
     normal.roi,
     totalCost,
-    totalTimeHours
+    totalTimeHours,
+    knowledge?.popularity
   );
   const { verdict, verdictLabel } = verdictFromScore(score);
   const strategy = recommendStrategy(input, scenarios);

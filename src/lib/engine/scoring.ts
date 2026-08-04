@@ -108,12 +108,31 @@ export function computeScore(
   input: AuctionInput,
   roiPct: number,
   totalCost: number,
-  totalTimeHours: number
+  totalTimeHours: number,
+  popularityOverride?: { score: number; provenance: "mesure" | "estime" }
 ): { score: number; stars: number; criteria: ScoreCriterion[] } {
+  // Graduation : la popularité mesurée (volume réel d'observations) remplace
+  // automatiquement la table par catégorie dès qu'elle existe.
+  const popularity: ScoreCriterion = popularityOverride
+    ? {
+        key: "popularite",
+        label: "Popularité",
+        weight: 0.1,
+        value: popularityOverride.score,
+        provenance: popularityOverride.provenance,
+      }
+    : {
+        key: "popularite",
+        label: "Popularité",
+        weight: 0.1,
+        value: Math.round(scorePopularity(input.category)),
+        provenance: "heuristique",
+      };
+
   const criteria: ScoreCriterion[] = [
-    { key: "rentabilite", label: "Rentabilité", weight: 0.35, value: Math.round(scoreProfitability(roiPct)) },
+    { key: "rentabilite", label: "Rentabilité", weight: 0.35, value: Math.round(scoreProfitability(roiPct)), provenance: "mesure" },
     { key: "faciliteRevente", label: "Facilité de revente", weight: 0.15, value: Math.round(scoreLiquidity(input)) },
-    { key: "popularite", label: "Popularité", weight: 0.1, value: Math.round(scorePopularity(input.category)) },
+    popularity,
     { key: "remiseEnEtat", label: "Temps de travail", weight: 0.1, value: Math.round(scoreRefurb(totalTimeHours)) },
     { key: "risque", label: "Risque maîtrisé", weight: 0.2, value: Math.round(scoreRisk(input, totalCost)) },
     { key: "confiance", label: "Confiance", weight: 0.1, value: Math.round(scoreConfidence(input)) },

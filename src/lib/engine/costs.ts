@@ -14,7 +14,12 @@
  */
 
 import { SCENARIO_META } from "./strategy";
-import type { AuctionInput, ResaleScenario, TimeBreakdown } from "./types";
+import type {
+  AuctionInput,
+  KnowledgeContext,
+  ResaleScenario,
+  TimeBreakdown,
+} from "./types";
 
 /** ROI cible utilisé pour le budget maximal conseillé (30 % par défaut). */
 export const TARGET_ROI = 0.3;
@@ -61,11 +66,26 @@ export function computeMaxBudget(input: AuctionInput, targetRoi = TARGET_ROI): n
   return round2(Math.max(0, maxBid));
 }
 
-/** Construit les trois scénarios de revente avec bénéfice net et ROI. */
+/**
+ * Construit les trois scénarios de revente avec bénéfice net et ROI.
+ * Les probabilités mesurées (délais réels de mes ventes) remplacent les
+ * heuristiques quand elles sont fournies.
+ */
 export function computeScenarios(
   input: AuctionInput,
-  totalCost: number
+  totalCost: number,
+  measured?: KnowledgeContext["probabilities"]
 ): ResaleScenario[] {
+  const probability = (kind: ResaleScenario["kind"]): Partial<ResaleScenario> => {
+    if (!measured) return {};
+    const pct =
+      kind === "rapide"
+        ? measured.rapidePct
+        : kind === "normal"
+          ? measured.normalPct
+          : measured.optimisePct;
+    return { probability: pct, probabilityProvenance: measured.provenance };
+  };
   const make = (
     kind: ResaleScenario["kind"],
     label: string,
@@ -86,6 +106,7 @@ export function computeScenarios(
       netProfit,
       roi,
       ...SCENARIO_META[kind],
+      ...probability(kind),
     };
   };
 

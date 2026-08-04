@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+/* Thème sombre "Auction Intelligence" */
+:root {
+  --background: #0b1020;
+  --surface: #111830;
+  --surface-2: #1a2340;
+  --border: #263156;
+  --foreground: #e7ecf7;
+  --muted: #8b96b8;
+  --accent: #f5b342;
+  --positive: #34d399;
+  --negative: #f87171;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-edge: var(--border);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Champs de formulaire homogènes */
+.field {
+  @apply w-full rounded-lg border border-edge bg-surface-2 px-3 py-2 text-sm text-foreground placeholder-muted outline-none focus:border-accent transition-colors;
+}
+.field-label {
+  @apply block text-xs font-medium text-muted mb-1;
+}

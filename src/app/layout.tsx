@@ -11,6 +11,7 @@ export const metadata: Metadata = {
 const NAV_LINKS = [
   { href: "/", label: "📊 Tableau de bord" },
   { href: "/analyse", label: "🔍 Nouvelle analyse" },
+  { href: "/objets", label: "📚 Objets" },
   { href: "/stock", label: "📦 Mon stock" },
   { href: "/encheres", label: "📜 Historique" },
 ];

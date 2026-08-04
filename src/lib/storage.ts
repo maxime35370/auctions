@@ -15,12 +15,15 @@
 import {
   analyzeAuction,
   defaultChecklist,
+  matchesTitle,
   type AuctionInput,
   type Condition,
 } from "@/lib/engine";
 import { z } from "zod";
 
 const STORAGE_KEY = "auction-intelligence:auctions:v1";
+const PRODUCTS_KEY = "auction-intelligence:products:v1";
+const OBSERVATIONS_KEY = "auction-intelligence:observations:v1";
 
 export type AuctionStatus =
   | "analysee"
@@ -78,6 +81,8 @@ export interface AuctionRecord extends AuctionInput {
   finalPrice: number | null;
   /** Prix de revente réel (si revendue). */
   soldPrice: number | null;
+  /** Fiche produit liée (base de connaissances), si identifiée. */
+  productId: string | null;
   // Snapshot du moteur (recalculé à chaque enregistrement)
   totalCost: number;
   maxBudget: number;
@@ -97,7 +102,66 @@ export type AuctionDraft = AuctionInput & {
   endDate: string;
   photos: string[];
   status?: AuctionStatus;
+  productId?: string | null;
 };
+
+// ---------------------------------------------------------------------------
+// Base de connaissances : produits et ventes observées
+// ---------------------------------------------------------------------------
+
+/** Fiche produit — le « Wikipédia des objets ». */
+export interface Product {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  name: string;
+  brand: string;
+  category: string;
+  /** Autres façons de nommer le produit (pour la reconnaissance de titres). */
+  aliases: string[];
+  /** Prix neuf de référence (saisi manuellement). */
+  priceNew: number | null;
+  notes: string;
+  /** Points à vérifier propres à ce produit (un par ligne). */
+  checkPoints: string;
+}
+
+export type ObservationSource =
+  | "interencheres"
+  | "leboncoin"
+  | "ebay"
+  | "marketplace"
+  | "moi"
+  | "autre";
+
+export const OBSERVATION_SOURCES: { value: ObservationSource; label: string }[] = [
+  { value: "interencheres", label: "Interencheres" },
+  { value: "leboncoin", label: "Leboncoin" },
+  { value: "ebay", label: "eBay" },
+  { value: "marketplace", label: "Facebook Marketplace" },
+  { value: "moi", label: "Ma propre transaction" },
+  { value: "autre", label: "Autre" },
+];
+
+export const OBSERVATION_KINDS: { value: "vente" | "enchere" | "annonce"; label: string }[] = [
+  { value: "vente", label: "Vente conclue" },
+  { value: "enchere", label: "Adjudication (enchère)" },
+  { value: "annonce", label: "Prix affiché (annonce)" },
+];
+
+/** Une vente / enchère / annonce observée, rattachée à un produit. */
+export interface Observation {
+  id: string;
+  productId: string;
+  date: string; // YYYY-MM-DD
+  price: number;
+  kind: "vente" | "enchere" | "annonce";
+  source: ObservationSource;
+  url: string;
+  notes: string;
+  /** Renseigné quand l'observation vient d'une de mes transactions. */
+  auctionId: string | null;
+}
 
 // ---------------------------------------------------------------------------
 // Validation (zod) — import JSON et lecture du stockage
@@ -126,6 +190,7 @@ const recordSchema = z.object({
     .catch([]),
   finalPrice: z.number().nullable().catch(null),
   soldPrice: z.number().nullable().catch(null),
+  productId: z.string().nullable().catch(null),
   status: z
     .enum(["analysee", "suivie", "achetee", "perdue", "revendue"])
     .catch("analysee"),
@@ -157,32 +222,73 @@ const recordSchema = z.object({
   score: z.number().catch(0),
 });
 
+const productSchema = z.object({
+  id: z.string().min(1),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  name: z.string().min(1),
+  brand: z.string().catch(""),
+  category: z.string().catch("autre"),
+  aliases: z.array(z.string()).catch([]),
+  priceNew: z.number().nullable().catch(null),
+  notes: z.string().catch(""),
+  checkPoints: z.string().catch(""),
+});
+
+const observationSchema = z.object({
+  id: z.string().min(1),
+  productId: z.string().min(1),
+  date: z.string(),
+  price: z.number().min(0),
+  kind: z.enum(["vente", "enchere", "annonce"]).catch("vente"),
+  source: z
+    .enum(["interencheres", "leboncoin", "ebay", "marketplace", "moi", "autre"])
+    .catch("autre"),
+  url: z.string().catch(""),
+  notes: z.string().catch(""),
+  auctionId: z.string().nullable().catch(null),
+});
+
 const exportFileSchema = z.object({
   app: z.literal("auction-intelligence"),
   version: z.number(),
   exportedAt: z.string().optional(),
   auctions: z.array(recordSchema),
+  // Absents des exports v1 : valeurs par défaut pour rester rétro-compatible.
+  products: z.array(productSchema).catch([]),
+  observations: z.array(observationSchema).catch([]),
 });
 
 // ---------------------------------------------------------------------------
 // Lecture / écriture
 // ---------------------------------------------------------------------------
 
-function readAll(): AuctionRecord[] {
+function readStore<T>(key: string, schema: z.ZodType<T>): T[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(key);
     if (!raw) return [];
-    const parsed = z.array(recordSchema).safeParse(JSON.parse(raw));
-    return parsed.success ? (parsed.data as AuctionRecord[]) : [];
+    const parsed = z.array(schema).safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : [];
   } catch {
     return [];
   }
 }
 
-function writeAll(records: AuctionRecord[]): void {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+function writeStore<T>(key: string, items: T[]): void {
+  window.localStorage.setItem(key, JSON.stringify(items));
 }
+
+const readAll = () => readStore(STORAGE_KEY, recordSchema) as AuctionRecord[];
+const writeAll = (records: AuctionRecord[]) => writeStore(STORAGE_KEY, records);
+
+const readProducts = () => readStore(PRODUCTS_KEY, productSchema) as Product[];
+const writeProducts = (items: Product[]) => writeStore(PRODUCTS_KEY, items);
+
+const readObservations = () =>
+  readStore(OBSERVATIONS_KEY, observationSchema) as Observation[];
+const writeObservations = (items: Observation[]) =>
+  writeStore(OBSERVATIONS_KEY, items);
 
 function update(id: string, patch: Partial<AuctionRecord>): AuctionRecord | undefined {
   const records = readAll();
@@ -227,6 +333,7 @@ export function saveAuction(draft: AuctionDraft, id?: string): AuctionRecord {
     pipeline: existing?.pipeline ?? [],
     finalPrice: existing?.finalPrice ?? null,
     soldPrice: existing?.soldPrice ?? null,
+    productId: draft.productId ?? existing?.productId ?? null,
     totalCost: analysis.totalCost,
     maxBudget: analysis.maxBudget,
     potentialMargin: analysis.potentialMargin,
@@ -266,12 +373,141 @@ export function togglePipelineStep(id: string, step: PipelineStepKey): AuctionRe
   return update(id, { pipeline });
 }
 
-/** Met à jour le résultat réel : statut, prix d'adjudication, prix de revente. */
+/**
+ * Met à jour le résultat réel : statut, prix d'adjudication, prix de revente.
+ * Si l'enchère est liée à un produit, la transaction alimente automatiquement
+ * la base de connaissances (une adjudication et/ou une vente observée).
+ */
 export function updateOutcome(
   id: string,
   outcome: { status: AuctionStatus; finalPrice: number | null; soldPrice: number | null }
 ): AuctionRecord | undefined {
-  return update(id, outcome);
+  const record = update(id, outcome);
+  if (record?.productId) {
+    const today = new Date().toISOString().slice(0, 10);
+    if (
+      record.finalPrice !== null &&
+      (record.status === "achetee" || record.status === "revendue")
+    ) {
+      upsertTransactionObservation(record, "enchere", record.finalPrice, today);
+    }
+    if (record.soldPrice !== null && record.status === "revendue") {
+      upsertTransactionObservation(record, "vente", record.soldPrice, today);
+    }
+  }
+  return record;
+}
+
+/** Crée ou met à jour l'observation issue d'une de mes transactions. */
+function upsertTransactionObservation(
+  record: AuctionRecord,
+  kind: "vente" | "enchere",
+  price: number,
+  date: string
+): void {
+  const all = readObservations();
+  const existing = all.find((o) => o.auctionId === record.id && o.kind === kind);
+  if (existing) {
+    writeObservations(
+      all.map((o) => (o.id === existing.id ? { ...o, price } : o))
+    );
+    return;
+  }
+  writeObservations([
+    ...all,
+    {
+      id: crypto.randomUUID(),
+      productId: record.productId!,
+      date,
+      price,
+      kind,
+      source: "moi",
+      url: "",
+      notes: `Ma transaction : ${record.title}`,
+      auctionId: record.id,
+    },
+  ]);
+}
+
+// ---------------------------------------------------------------------------
+// Produits (fiches) et observations — CRUD
+// ---------------------------------------------------------------------------
+
+export function listProducts(): Product[] {
+  return readProducts().sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function getProduct(id: string): Product | undefined {
+  return readProducts().find((p) => p.id === id);
+}
+
+export type ProductDraft = Omit<Product, "id" | "createdAt" | "updatedAt">;
+
+export function saveProduct(draft: ProductDraft, id?: string): Product {
+  const now = new Date().toISOString();
+  const products = readProducts();
+  const existing = id ? products.find((p) => p.id === id) : undefined;
+  const product: Product = {
+    ...draft,
+    id: existing?.id ?? crypto.randomUUID(),
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+  };
+  writeProducts(
+    existing
+      ? products.map((p) => (p.id === existing.id ? product : p))
+      : [...products, product]
+  );
+  return product;
+}
+
+/** Supprime un produit, ses observations, et détache les enchères liées. */
+export function deleteProduct(id: string): void {
+  writeProducts(readProducts().filter((p) => p.id !== id));
+  writeObservations(readObservations().filter((o) => o.productId !== id));
+  writeAll(
+    readAll().map((a) => (a.productId === id ? { ...a, productId: null } : a))
+  );
+}
+
+/** Observations d'un produit, plus récentes en premier. */
+export function listObservations(productId: string): Observation[] {
+  return readObservations()
+    .filter((o) => o.productId === productId)
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export function allObservations(): Observation[] {
+  return readObservations();
+}
+
+export type ObservationDraft = Omit<Observation, "id" | "auctionId"> & {
+  auctionId?: string | null;
+};
+
+export function addObservation(draft: ObservationDraft): Observation {
+  const observation: Observation = {
+    auctionId: null,
+    ...draft,
+    id: crypto.randomUUID(),
+  };
+  writeObservations([...readObservations(), observation]);
+  return observation;
+}
+
+export function deleteObservation(id: string): void {
+  writeObservations(readObservations().filter((o) => o.id !== id));
+}
+
+/** Produits dont le nom (ou un alias) correspond au titre d'une annonce. */
+export function suggestProductsForTitle(title: string): Product[] {
+  if (!title.trim()) return [];
+  return readProducts().filter((p) => matchesTitle(title, p.name, p.aliases));
+}
+
+/** Nombre d'enchères rattachées à un produit. */
+export function auctionsForProduct(productId: string): AuctionRecord[] {
+  return readAll().filter((a) => a.productId === productId);
 }
 
 // ---------------------------------------------------------------------------
@@ -360,14 +596,16 @@ export function endingSoon(records: AuctionRecord[], days = 3): AuctionRecord[] 
 // Sauvegarde / restauration (export–import JSON)
 // ---------------------------------------------------------------------------
 
-/** Sérialise toutes les données pour téléchargement. */
+/** Sérialise toutes les données (enchères, produits, observations). */
 export function exportJson(): string {
   return JSON.stringify(
     {
       app: "auction-intelligence",
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       auctions: readAll(),
+      products: readProducts(),
+      observations: readObservations(),
     },
     null,
     2
@@ -375,18 +613,24 @@ export function exportJson(): string {
 }
 
 /**
- * Importe un fichier d'export. Les enchères importées remplacent celles ayant
- * le même id ; les autres sont ajoutées. Renvoie le nombre importé.
- * Lève une erreur si le fichier n'est pas un export valide.
+ * Importe un fichier d'export (v1 ou v2). Les éléments de même id sont
+ * remplacés, les autres ajoutés. Renvoie le nombre d'éléments importés.
  */
 export function importJson(text: string): number {
   const parsed = exportFileSchema.safeParse(JSON.parse(text));
   if (!parsed.success) {
     throw new Error("Fichier invalide : ce n'est pas un export Auction Intelligence.");
   }
-  const incoming = parsed.data.auctions as AuctionRecord[];
-  const current = new Map(readAll().map((a) => [a.id, a]));
-  for (const record of incoming) current.set(record.id, record);
-  writeAll([...current.values()]);
-  return incoming.length;
+
+  const mergeById = <T extends { id: string }>(current: T[], incoming: T[]): T[] => {
+    const map = new Map(current.map((x) => [x.id, x]));
+    for (const item of incoming) map.set(item.id, item);
+    return [...map.values()];
+  };
+
+  const { auctions, products, observations } = parsed.data;
+  writeAll(mergeById(readAll(), auctions as AuctionRecord[]));
+  writeProducts(mergeById(readProducts(), products as Product[]));
+  writeObservations(mergeById(readObservations(), observations as Observation[]));
+  return auctions.length + products.length + observations.length;
 }

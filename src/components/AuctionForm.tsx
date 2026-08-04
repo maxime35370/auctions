@@ -7,7 +7,8 @@
  * l'analyse se met à jour en temps réel pendant la saisie. À l'enregistrement,
  * la couche de stockage recalcule et persiste le tout (localStorage).
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   analyzeAuction,
@@ -15,11 +16,20 @@ import {
   CATEGORY_LABELS,
   CONDITIONS,
   emptyAuctionInput,
+  matchesTitle,
+  productStats,
   type AuctionInput,
 } from "@/lib/engine";
-import { saveAuction, type AuctionDraft } from "@/lib/storage";
-import { hours } from "@/lib/format";
+import {
+  allObservations,
+  listProducts,
+  saveAuction,
+  type AuctionDraft,
+  type Product,
+} from "@/lib/storage";
+import { euro, hours } from "@/lib/format";
 import { AnalysisPanel } from "./AnalysisPanel";
+import { ConfidenceBadge } from "./KnowledgeBadges";
 
 const EMPTY: AuctionDraft = {
   ...emptyAuctionInput(),
@@ -50,6 +60,23 @@ export function AuctionForm({
     (initialValues?.photos ?? []).join("\n")
   );
   const [error, setError] = useState<string | null>(null);
+
+  // --- Base de connaissances : liaison à une fiche produit ---
+  const [products, setProducts] = useState<Product[]>([]);
+  useEffect(() => setProducts(listProducts()), []);
+  const linkedProduct = products.find((p) => p.id === values.productId) ?? null;
+  const suggestions = useMemo(
+    () =>
+      values.productId
+        ? []
+        : products.filter((p) => matchesTitle(values.title, p.name, p.aliases)).slice(0, 3),
+    [products, values.title, values.productId]
+  );
+  const knownStats = useMemo(() => {
+    if (!linkedProduct) return null;
+    const obs = allObservations().filter((o) => o.productId === linkedProduct.id);
+    return productStats(obs);
+  }, [linkedProduct]);
 
   const analysis = useMemo(() => analyzeAuction(values), [values]);
   const totalHours =
@@ -195,6 +222,115 @@ export function AuctionForm({
             <NumberField label="Déplacement (€)" value={values.travelCost} onChange={num("travelCost")} />
             <NumberField label="Livraison (€)" value={values.shippingCost} onChange={num("shippingCost")} />
           </div>
+        </Section>
+
+        <Section title="Base de connaissances">
+          {linkedProduct ? (
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm">
+                  📚 <b>Produit connu :</b>{" "}
+                  <Link
+                    href={`/objet?id=${linkedProduct.id}`}
+                    className="text-accent hover:underline"
+                  >
+                    {linkedProduct.name}
+                  </Link>{" "}
+                  {knownStats && knownStats.count > 0 && (
+                    <span className="text-muted">
+                      ({knownStats.count} observation{knownStats.count > 1 ? "s" : ""})
+                    </span>
+                  )}
+                </p>
+                <div className="flex items-center gap-2">
+                  {knownStats && <ConfidenceBadge value={knownStats.confidence} />}
+                  <button
+                    type="button"
+                    onClick={() => set("productId", null)}
+                    className="text-xs text-muted hover:text-negative"
+                  >
+                    Détacher
+                  </button>
+                </div>
+              </div>
+              {knownStats?.suggestedNormal !== undefined ? (
+                <div className="rounded-lg border border-accent/40 bg-accent/5 p-3 space-y-2 text-sm">
+                  <p>
+                    💡 Analyse intelligente : prix suggérés{" "}
+                    <b>{euro(knownStats.suggestedFast!)}</b> /{" "}
+                    <b>{euro(knownStats.suggestedNormal)}</b> /{" "}
+                    <b>{euro(knownStats.suggestedPremium!)}</b>
+                    {knownStats.typicalAuctionPrice !== undefined && (
+                      <span className="text-muted">
+                        {" "}
+                        · adjudication typique {euro(knownStats.typicalAuctionPrice)}
+                      </span>
+                    )}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setValues((v) => ({
+                        ...v,
+                        resaleFast: knownStats.suggestedFast!,
+                        resaleNormal: knownStats.suggestedNormal!,
+                        resaleOptimized: knownStats.suggestedPremium!,
+                      }))
+                    }
+                    className="rounded-lg bg-accent text-background font-semibold px-3 py-1.5 text-xs hover:opacity-90 transition-opacity"
+                  >
+                    Utiliser les prix connus
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs text-muted">
+                  Pas encore d&apos;observations pour ce produit — ajoutez des
+                  ventes observées sur sa fiche pour activer l&apos;analyse
+                  intelligente.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs text-muted">
+                Produit inconnu → analyse simple. Liez une fiche produit pour
+                activer l&apos;analyse intelligente (prix suggérés, confiance).
+              </p>
+              {suggestions.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {suggestions.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => set("productId", p.id)}
+                      className="rounded-full border border-accent/40 bg-accent/10 text-accent px-3 py-1 text-xs hover:bg-accent/20 transition-colors"
+                    >
+                      🔗 Lier à « {p.name} »
+                    </button>
+                  ))}
+                </div>
+              )}
+              {products.length > 0 && (
+                <select
+                  className="field"
+                  value=""
+                  onChange={(e) => e.target.value && set("productId", e.target.value)}
+                >
+                  <option value="">Lier à une fiche existante…</option>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <p className="text-xs">
+                <Link href="/objets" className="text-accent hover:underline">
+                  Créer une fiche produit →
+                </Link>
+              </p>
+            </div>
+          )}
         </Section>
 
         <Section title="Estimation de revente">

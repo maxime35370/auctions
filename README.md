@@ -19,6 +19,12 @@ sauvegardées / restaurées en JSON depuis la page Historique.
   analyse **en temps réel** : jauge, 🛑 budget maximum, 🎯 stratégie
   conseillée (gain réel, délai, probabilité), score expliqué (✔/✘),
   📦 plateformes de revente conseillées
+- **📚 Objets (base de connaissances)** — une fiche par produit : ventes
+  observées (Interencheres, Leboncoin, eBay…), courbe des prix, prix de
+  revente suggérés (percentiles), indice de confiance **calculé** et justifié,
+  tendance 6 mois. Une enchère liée à un produit connu passe en **analyse
+  intelligente** (bouton « Utiliser les prix connus ») et vos transactions
+  réelles alimentent automatiquement l'historique
 - **Mon stock** — lots possédés avec pipeline de revente (nettoyé → réparé →
   photographié → annoncé → vendu → expédié → terminé) et vue portefeuille
 - **Fiche** — photos, ⚠️ checklist de vérifications par catégorie (cochable),

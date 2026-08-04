@@ -16,6 +16,7 @@ import {
 import {
   deleteAuction,
   getAuction,
+  getProduct,
   PIPELINE_STEPS,
   STATUS_LABELS,
   toggleChecklistItem,
@@ -139,6 +140,19 @@ function FicheContent() {
             <InfoRow label="État" value={conditionLabel} />
             <InfoRow label="Maison de vente" value={record.auctionHouse} />
             <InfoRow label="Localisation" value={record.location} />
+            <InfoRow
+              label="Fiche produit"
+              value={
+                record.productId ? (
+                  <Link
+                    href={`/objet?id=${record.productId}`}
+                    className="text-accent hover:underline"
+                  >
+                    📚 {getProduct(record.productId)?.name ?? "Voir la fiche"} →
+                  </Link>
+                ) : null
+              }
+            />
             <InfoRow
               label="Annonce"
               value={

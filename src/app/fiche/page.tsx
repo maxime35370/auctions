@@ -9,11 +9,15 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   analyzeAuction,
+  measuredPopularity,
+  measuredProbabilities,
   CATEGORY_LABELS,
   CONDITIONS,
   type Category,
+  type KnowledgeContext,
 } from "@/lib/engine";
 import {
+  activeObservations,
   deleteAuction,
   getAuction,
   getProduct,
@@ -61,7 +65,30 @@ function FicheContent() {
     );
   }
 
-  const analysis = analyzeAuction(record);
+  // Graduation : si un produit est lié, ses données mesurées remplacent
+  // les heuristiques (popularité réelle, probabilités réelles).
+  let knowledgeCtx: KnowledgeContext | undefined;
+  if (record.productId) {
+    const obs = activeObservations(record.productId);
+    if (obs.length > 0) {
+      const pop = measuredPopularity(obs);
+      const probs = measuredProbabilities(obs);
+      knowledgeCtx = {};
+      if (pop.provenance !== "heuristique")
+        knowledgeCtx.popularity = { score: pop.score, provenance: pop.provenance };
+      if (probs)
+        knowledgeCtx.probabilities = {
+          provenance: probs.provenance,
+          rapidePct: probs.rapidePct,
+          normalPct: probs.normalPct,
+          optimisePct: probs.optimisePct,
+        };
+      if (!knowledgeCtx.popularity && !knowledgeCtx.probabilities)
+        knowledgeCtx = undefined;
+    }
+  }
+
+  const analysis = analyzeAuction(record, knowledgeCtx);
   const conditionLabel =
     CONDITIONS.find((c) => c.value === record.condition)?.label ??
     record.condition;

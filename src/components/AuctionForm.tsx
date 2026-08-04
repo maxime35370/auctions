@@ -14,8 +14,15 @@ import {
   accessoryBonus,
   adjustSuggestions,
   analyzeAuction,
+  averageSaleDelay,
+  dataMaturity,
+  explainRecommendation,
+  measuredPopularity,
+  measuredProbabilities,
+  myVsMarket,
   opportunityVerdict,
   opportunityZones,
+  priceStability,
   CATEGORIES,
   CATEGORY_LABELS,
   CONDITIONS,
@@ -23,6 +30,7 @@ import {
   matchesTitle,
   productStats,
   type AuctionInput,
+  type KnowledgeContext,
 } from "@/lib/engine";
 import {
   allObservations,
@@ -34,7 +42,7 @@ import {
 import { euro, hours } from "@/lib/format";
 import { ebaySoldSearchUrl } from "@/lib/import/market";
 import { AnalysisPanel } from "./AnalysisPanel";
-import { ConfidenceBadge } from "./KnowledgeBadges";
+import { ConfidenceBadge, MaturityBadge } from "./KnowledgeBadges";
 
 /** Au-delà de cet âge, le marché est considéré comme ancien (90 jours). */
 const STALE_DAYS = 90;
@@ -134,7 +142,47 @@ export function AuctionForm({
       ? adjustSuggestions(knownStats, bonus)
       : null;
 
-  const analysis = useMemo(() => analyzeAuction(values), [values]);
+  // Graduation : le contexte de connaissances remplace les heuristiques par
+  // des valeurs mesurées (popularité réelle, probabilités réelles).
+  const knowledgeCtx = useMemo<KnowledgeContext | undefined>(() => {
+    if (!linkedProduct || knownObs.length === 0) return undefined;
+    const pop = measuredPopularity(knownObs);
+    const probs = measuredProbabilities(knownObs);
+    const ctx: KnowledgeContext = {};
+    if (pop.provenance !== "heuristique")
+      ctx.popularity = { score: pop.score, provenance: pop.provenance };
+    if (probs)
+      ctx.probabilities = {
+        provenance: probs.provenance,
+        rapidePct: probs.rapidePct,
+        normalPct: probs.normalPct,
+        optimisePct: probs.optimisePct,
+      };
+    return ctx.popularity || ctx.probabilities ? ctx : undefined;
+  }, [linkedProduct, knownObs]);
+
+  const maturity = useMemo(
+    () => (linkedProduct ? dataMaturity(knownObs) : null),
+    [linkedProduct, knownObs]
+  );
+
+  // « Pourquoi ce conseil ? » — uniquement des faits mesurés.
+  const recommendation = useMemo(() => {
+    if (!linkedProduct || !knownStats || knownStats.count === 0) return null;
+    return explainRecommendation({
+      currentPrice: values.currentPrice,
+      stats: knownStats,
+      zones,
+      stability: priceStability(knownObs),
+      performance: myVsMarket(knownObs),
+      saleDelay: averageSaleDelay(knownObs),
+    });
+  }, [linkedProduct, knownStats, knownObs, zones, values.currentPrice]);
+
+  const analysis = useMemo(
+    () => analyzeAuction(values, knowledgeCtx),
+    [values, knowledgeCtx]
+  );
   const totalHours =
     values.refurbHours +
     values.cleaningHours +
@@ -302,6 +350,9 @@ export function AuctionForm({
                   )}
                 </p>
                 <div className="flex items-center gap-2">
+                  {maturity && (
+                    <MaturityBadge score={maturity.score} level={maturity.level} />
+                  )}
                   {knownStats && <ConfidenceBadge value={knownStats.confidence} />}
                   <button
                     type="button"
@@ -312,6 +363,26 @@ export function AuctionForm({
                   </button>
                 </div>
               </div>
+              {recommendation &&
+                recommendation.positives.length + recommendation.negatives.length > 0 && (
+                  <div className="rounded-lg border border-edge bg-surface-2 p-3">
+                    <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-1.5">
+                      Pourquoi ce conseil ? (faits mesurés)
+                    </p>
+                    <ul className="text-sm space-y-1">
+                      {recommendation.positives.map((r) => (
+                        <li key={r} className="text-positive">
+                          ✓ {r}
+                        </li>
+                      ))}
+                      {recommendation.negatives.map((r) => (
+                        <li key={r} className="text-negative">
+                          ✗ {r}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               {linkedProduct.accessories.length > 0 && (
                 <div className="rounded-lg border border-edge bg-surface-2 p-3 space-y-1.5">
                   <p className="text-xs font-semibold text-muted uppercase tracking-wide">

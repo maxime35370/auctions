@@ -25,7 +25,7 @@ connaissances** qui rend les recommandations de plus en plus fiables.
 | **Le moteur est la source de vérité** | Tous les calculs dans `src/lib/engine` (fonctions pures, testées). Jamais de règle métier dans un composant React. |
 | **Le stockage est isolé** | Toutes les pages passent par `src/lib/storage.ts`. Changer de backend (localStorage → API/PostgreSQL) ne touche que ce fichier. |
 | **Les connecteurs sont indépendants** | 1 site = 1 connecteur (`src/lib/import/connectors/`). Tous produisent le même `StandardAuctionData`. Ajouter un site n'impacte rien d'autre. |
-| **Les heuristiques sont remplaçables** | Popularité, délais, probabilités : valeurs documentées aujourd'hui, statistiques réelles demain — mêmes interfaces. |
+| **Graduation automatique** | Chaque information a une provenance : 🔴 heuristique (< 10 données) → 🟡 estimé (10-29) → 🟢 mesuré (≥ 30). Les valeurs mesurées remplacent les heuristiques sans modifier aucune règle. Badges affichés partout ; taux de maturité par produit (observations + ventes + transactions perso). |
 | **Petites étapes validées** | Une fonctionnalité = une PR = un déploiement. Jamais de refonte massive. |
 
 ## 3. Écrans
@@ -120,7 +120,8 @@ devient un client d'API — les pages ne changent pas.
 | V2 | **Base de connaissances** : fiches produits, ventes observées multi-sources, courbe de prix, prix suggérés (percentiles), indice de confiance calculé, tendance/indice de marché, analyse intelligente (produit connu), transactions → observations automatiques | ✅ livré |
 | V2.1 | **Moteur statistique** : 🎯 prix d'opportunité (p15/p40, zones d'achat), stabilité (écart-type/CV), moi vs marché, temps moyen de revente réel, observations rejetées (3ᵉ base) ; **📊 Étude de marché** : import en masse d'une page de résultats collée (eBay/Leboncoin/Marketplace) → dizaines d'observations validées d'un clic | ✅ livré |
 | V2.2 | **🧩 Extension Chrome/Edge** (MV3, `activeTab` seul) : « Analyser cette enchère » et « Actualiser le marché » — JSON compact structuré via fragment d'URL (jamais envoyé à un serveur), reconnaissance automatique du produit, états explicites (marché récent ✓ / marché ancien → recherche eBay proposée / produit inconnu), photos tolérantes aux liens morts | ✅ livré |
-| V2.3 | Connecteur Interencheres affiné sur pages réelles (retours utilisateur) ; Agorastore, Enchères-Domaine ; bibliothèque de snapshots datés ; temps de vente réels alimentant délais et probabilités | à venir |
+| V2.3 | **Graduation des données** : provenance 🟢🟡🔴 sur chaque information, popularité mesurée (volume réel 12 mois), probabilités mesurées des scénarios (délais réels de mes ventes), comparateur de plateformes réel, « Pourquoi ce conseil ? » (faits mesurés uniquement), taux de maturité par produit | ✅ livré |
+| V2.4 | Connecteur Interencheres affiné sur pages réelles (retours utilisateur) ; Agorastore, Enchères-Domaine ; risque mesuré (traçage des réparations) ; délais moyens par plateforme (ventes réelles) | à venir |
 | V3 | Backend + comptes + synchronisation ; alertes/notifications ; détection automatique du modèle depuis titre/photos | à venir |
 
 ## 9. Qualité

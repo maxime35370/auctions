@@ -193,6 +193,215 @@ export function marketIndex(
 }
 
 // ---------------------------------------------------------------------------
+// Provenance et maturité — la graduation heuristique → estimé → mesuré
+// ---------------------------------------------------------------------------
+
+/**
+ * Sur quoi repose une information :
+ *  - 🟢 mesure      : ≥ 30 points de données réels ;
+ *  - 🟡 estime      : 10 à 29 points de données ;
+ *  - 🔴 heuristique : valeur prédéfinie, faute de données.
+ * Les heuristiques disparaissent automatiquement quand les données arrivent —
+ * aucune règle à modifier à la main.
+ */
+export type Provenance = "mesure" | "estime" | "heuristique";
+
+export const PROVENANCE_THRESHOLDS = { estime: 10, mesure: 30 };
+
+export function provenanceFor(sampleSize: number): Provenance {
+  if (sampleSize >= PROVENANCE_THRESHOLDS.mesure) return "mesure";
+  if (sampleSize >= PROVENANCE_THRESHOLDS.estime) return "estime";
+  return "heuristique";
+}
+
+/** Taux de maturité des données d'un produit (0–100). */
+export interface DataMaturity {
+  score: number;
+  level: "fiable" | "partiel" | "insuffisant";
+  observations: number;
+  sales: number;
+  myTransactions: number;
+}
+
+/**
+ * Maturité = volume d'observations (≤ 50 pts) + ventes conclues (≤ 30 pts)
+ * + transactions personnelles (≤ 20 pts). ≥ 70 : fiable ; ≥ 30 : partiel.
+ */
+export function dataMaturity(observations: ExtendedObservation[]): DataMaturity {
+  const sales = observations.filter((o) => o.kind === "vente").length;
+  const myTransactions = new Set(
+    observations.filter((o) => o.auctionId).map((o) => o.auctionId)
+  ).size;
+  const score = Math.min(
+    100,
+    Math.min(50, observations.length) +
+      Math.min(30, sales * 2) +
+      Math.min(20, myTransactions * 5)
+  );
+  return {
+    score,
+    level: score >= 70 ? "fiable" : score >= 30 ? "partiel" : "insuffisant",
+    observations: observations.length,
+    sales,
+    myTransactions,
+  };
+}
+
+/**
+ * Popularité MESURÉE d'un produit : volume d'observations sur 12 mois
+ * (la demande laisse des traces) + fraîcheur. Remplace la table par
+ * catégorie dès que l'échantillon suffit (provenance ≥ estimé).
+ * Barème documenté : 30 pts de base avec données + jusqu'à 65 pts de volume
+ * (plafond à 50 observations/12 mois) → maximum 95.
+ */
+export function measuredPopularity(
+  observations: ExtendedObservation[],
+  now: Date = new Date()
+): { score: number; provenance: Provenance; recentCount: number } {
+  const recentCount = observations.filter(
+    (o) => now.getTime() - new Date(o.date).getTime() <= 365 * DAY
+  ).length;
+  const provenance = provenanceFor(recentCount);
+  const score =
+    provenance === "heuristique"
+      ? 0
+      : Math.round(Math.min(95, 30 + 65 * Math.min(1, recentCount / 50)));
+  return { score, provenance, recentCount };
+}
+
+/**
+ * Probabilités MESURÉES des scénarios de revente, à partir des délais réels
+ * de MES transactions (adjudication → vente) :
+ * rapide = part vendue ≤ 10 j ; normal = ≤ 30 j ; optimisé = ≤ 90 j.
+ * Nécessite ≥ 5 délais (estimé), ≥ 15 (mesuré).
+ */
+export interface MeasuredProbabilities {
+  sampleSize: number;
+  /** Jamais heuristique : la fonction renvoie undefined sans données. */
+  provenance: "mesure" | "estime";
+  rapidePct: number;
+  normalPct: number;
+  optimisePct: number;
+  avgDays: number;
+}
+
+export function measuredProbabilities(
+  observations: ExtendedObservation[]
+): MeasuredProbabilities | undefined {
+  const delays = saleDelays(observations);
+  if (delays.length < 5) return undefined;
+  const share = (limit: number) =>
+    Math.round((delays.filter((d) => d <= limit).length / delays.length) * 1000) / 10;
+  return {
+    sampleSize: delays.length,
+    provenance: delays.length >= 15 ? "mesure" : "estime",
+    rapidePct: share(10),
+    normalPct: share(30),
+    optimisePct: share(90),
+    avgDays: Math.round(delays.reduce((s, d) => s + d, 0) / delays.length),
+  };
+}
+
+/** Délais adjudication → vente de mes transactions (jours). */
+function saleDelays(observations: ExtendedObservation[]): number[] {
+  const byAuction = new Map<string, { bought?: string; sold?: string }>();
+  for (const o of observations) {
+    if (!o.auctionId) continue;
+    const entry = byAuction.get(o.auctionId) ?? {};
+    if (o.kind === "enchere") entry.bought = o.date;
+    if (o.kind === "vente") entry.sold = o.date;
+    byAuction.set(o.auctionId, entry);
+  }
+  const delays: number[] = [];
+  for (const { bought, sold } of byAuction.values()) {
+    if (!bought || !sold) continue;
+    const days = (new Date(sold).getTime() - new Date(bought).getTime()) / DAY;
+    if (days >= 0) delays.push(days);
+  }
+  return delays;
+}
+
+/** Statistiques réelles par plateforme (comparateur mesuré). */
+export interface PlatformStat {
+  source: string;
+  count: number;
+  avg: number;
+  median: number;
+}
+
+export function platformStats(
+  observations: ExtendedObservation[]
+): PlatformStat[] {
+  const bySource = new Map<string, number[]>();
+  for (const o of observations) {
+    if (!o.source || o.source === "moi" || o.price <= 0) continue;
+    const list = bySource.get(o.source) ?? [];
+    list.push(o.price);
+    bySource.set(o.source, list);
+  }
+  return [...bySource.entries()]
+    .filter(([, prices]) => prices.length >= 2)
+    .map(([source, prices]) => {
+      const sorted = [...prices].sort((a, b) => a - b);
+      return {
+        source,
+        count: prices.length,
+        avg: round(prices.reduce((s, x) => s + x, 0) / prices.length),
+        median: percentile(sorted, 0.5),
+      };
+    })
+    .sort((a, b) => b.avg - a.avg);
+}
+
+/**
+ * « Pourquoi je recommande (ou non) cet achat ? » — uniquement des faits
+ * mesurés sur les données ; jamais d'opinion.
+ */
+export function explainRecommendation(args: {
+  currentPrice: number;
+  stats: ProductStats;
+  zones?: OpportunityZones;
+  stability?: PriceStability;
+  performance?: MyVsMarket;
+  saleDelay?: { avgDays: number; count: number };
+}): { positives: string[]; negatives: string[] } {
+  const { currentPrice, stats, zones, stability, performance, saleDelay } = args;
+  const positives: string[] = [];
+  const negatives: string[] = [];
+
+  if (stats.median !== undefined && currentPrice > 0) {
+    const diff = Math.round(((currentPrice - stats.median) / stats.median) * 100);
+    if (diff <= -5) positives.push(`Prix ${-diff} % sous la médiane du marché`);
+    else if (diff >= 10) negatives.push(`Prix ${diff} % au-dessus de la médiane`);
+  }
+  if (zones && currentPrice > 0) {
+    if (currentPrice <= zones.opportunityPrice)
+      positives.push("Dans la zone d'opportunité (meilleurs 15 % des prix observés)");
+    else if (currentPrice > zones.fairPrice)
+      negatives.push("Au-dessus de la zone d'achat intéressante");
+  }
+  if (stats.count >= PROVENANCE_THRESHOLDS.estime)
+    positives.push(`Objet observé ${stats.count} fois — données exploitables`);
+  else if (stats.count > 0)
+    negatives.push(`Seulement ${stats.count} observation(s) — prudence`);
+  if (saleDelay)
+    positives.push(
+      `Mon temps moyen de revente : ${saleDelay.avgDays} j (${saleDelay.count} transaction(s))`
+    );
+  if (stability) {
+    if (stability.label === "stable") positives.push("Prix stables sur le marché (faible dispersion)");
+    if (stability.label === "tres-variable")
+      negatives.push(`Prix très variables (±${stability.cvPct.toFixed(0)} %) — revente incertaine`);
+  }
+  if (performance && performance.diffPct >= 5)
+    positives.push(
+      `Bon historique personnel : je revends +${performance.diffPct.toFixed(0)} % vs le marché`
+    );
+
+  return { positives, negatives };
+}
+
+// ---------------------------------------------------------------------------
 // Moteur statistique : prix d'opportunité, stabilité, mes performances
 // ---------------------------------------------------------------------------
 
@@ -321,20 +530,7 @@ export function myVsMarket(
 export function averageSaleDelay(
   observations: ExtendedObservation[]
 ): { avgDays: number; count: number } | undefined {
-  const byAuction = new Map<string, { bought?: string; sold?: string }>();
-  for (const o of observations) {
-    if (!o.auctionId) continue;
-    const entry = byAuction.get(o.auctionId) ?? {};
-    if (o.kind === "enchere") entry.bought = o.date;
-    if (o.kind === "vente") entry.sold = o.date;
-    byAuction.set(o.auctionId, entry);
-  }
-  const delays: number[] = [];
-  for (const { bought, sold } of byAuction.values()) {
-    if (!bought || !sold) continue;
-    const days = (new Date(sold).getTime() - new Date(bought).getTime()) / DAY;
-    if (days >= 0) delays.push(days);
-  }
+  const delays = saleDelays(observations);
   if (delays.length === 0) return undefined;
   return {
     avgDays: Math.round(delays.reduce((s, d) => s + d, 0) / delays.length),

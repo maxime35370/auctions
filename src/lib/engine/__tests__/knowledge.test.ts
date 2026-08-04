@@ -5,15 +5,22 @@ import {
   averageSaleDelay,
   computeConfidence,
   computeTrend,
+  dataMaturity,
+  explainRecommendation,
   marketIndex,
   matchesTitle,
+  measuredPopularity,
+  measuredProbabilities,
   myVsMarket,
   opportunityVerdict,
   opportunityZones,
+  platformStats,
   priceStability,
   productStats,
+  provenanceFor,
   type ObservationInput,
 } from "../knowledge";
+import { analyzeAuction, emptyAuctionInput } from "..";
 
 const NOW = new Date("2026-08-01");
 
@@ -196,6 +203,105 @@ describe("averageSaleDelay — ⚡ temps moyen de revente", () => {
     expect(
       averageSaleDelay([{ ...obs("2026-05-01", 900, "enchere"), auctionId: "a1" }])
     ).toBeUndefined();
+  });
+});
+
+describe("graduation — heuristique → estimé → mesuré", () => {
+  it("provenanceFor applique les seuils 10 et 30", () => {
+    expect(provenanceFor(5)).toBe("heuristique");
+    expect(provenanceFor(10)).toBe("estime");
+    expect(provenanceFor(30)).toBe("mesure");
+  });
+
+  it("dataMaturity combine observations, ventes et transactions", () => {
+    const many = [
+      ...Array.from({ length: 40 }, (_, i) => obs(`2026-0${(i % 6) + 1}-10`, 100)),
+      { ...obs("2026-07-01", 90, "enchere"), auctionId: "a1" },
+      { ...obs("2026-07-05", 130, "vente"), auctionId: "a1" },
+    ];
+    const m = dataMaturity(many);
+    expect(m.observations).toBe(42);
+    expect(m.myTransactions).toBe(1);
+    expect(m.score).toBeGreaterThanOrEqual(70);
+    expect(m.level).toBe("fiable");
+    expect(dataMaturity([obs("2026-01-01", 100)]).level).toBe("insuffisant");
+  });
+
+  it("measuredPopularity remplace la table quand l'échantillon suffit", () => {
+    const few = [obs("2026-06-01", 100)];
+    expect(measuredPopularity(few, NOW).provenance).toBe("heuristique");
+    const many = Array.from({ length: 50 }, (_, i) =>
+      obs(`2026-0${(i % 6) + 1}-15`, 100)
+    );
+    const p = measuredPopularity(many, NOW);
+    expect(p.provenance).toBe("mesure");
+    expect(p.score).toBe(95); // 50 obs sur 12 mois → plafond
+  });
+
+  it("measuredProbabilities : « 38 des 42 vendus en < 10 jours »", () => {
+    const sales = Array.from({ length: 42 }, (_, i) => {
+      const days = i < 38 ? 5 : 20; // 38 rapides, 4 plus lents
+      return [
+        { ...obs("2026-05-01", 900, "enchere" as const), auctionId: `a${i}` },
+        { ...obs(`2026-05-${String(1 + days).padStart(2, "0")}`, 1300, "vente" as const), auctionId: `a${i}` },
+      ];
+    }).flat();
+    const p = measuredProbabilities(sales)!;
+    expect(p.sampleSize).toBe(42);
+    expect(p.provenance).toBe("mesure");
+    expect(p.rapidePct).toBeCloseTo(90.5, 0);
+  });
+
+  it("les probabilités mesurées remplacent les heuristiques dans l'analyse", () => {
+    const a = analyzeAuction(
+      { ...emptyAuctionInput(), currentPrice: 100, resaleFast: 200, resaleNormal: 220, resaleOptimized: 240 },
+      {
+        popularity: { score: 92, provenance: "mesure" },
+        probabilities: { provenance: "mesure", rapidePct: 90.5, normalPct: 97, optimisePct: 100 },
+      }
+    );
+    const rapide = a.scenarios.find((s) => s.kind === "rapide")!;
+    expect(rapide.probability).toBe(90.5);
+    expect(rapide.probabilityProvenance).toBe("mesure");
+    const pop = a.criteria.find((c) => c.key === "popularite")!;
+    expect(pop.value).toBe(92);
+    expect(pop.provenance).toBe("mesure");
+  });
+
+  it("sans contexte, la popularité reste heuristique (et le dit)", () => {
+    const a = analyzeAuction({ ...emptyAuctionInput(), category: "photo" });
+    const pop = a.criteria.find((c) => c.key === "popularite")!;
+    expect(pop.provenance).toBe("heuristique");
+    expect(pop.value).toBe(85);
+  });
+
+  it("platformStats compare les plateformes sur données réelles", () => {
+    const p = platformStats([
+      { ...obs("2026-05-01", 1300), source: "ebay" },
+      { ...obs("2026-05-02", 1480), source: "ebay" },
+      { ...obs("2026-05-03", 1250), source: "leboncoin" },
+      { ...obs("2026-05-04", 1390), source: "leboncoin" },
+      { ...obs("2026-05-05", 1000), source: "moi" }, // exclu
+    ]);
+    expect(p).toHaveLength(2);
+    expect(p[0].source).toBe("ebay"); // prix moyen le plus haut d'abord
+    expect(p[0].avg).toBe(1390);
+  });
+
+  it("explainRecommendation ne cite que des faits mesurés", () => {
+    const observations = Array.from({ length: 20 }, (_, i) =>
+      obs(`2026-0${(i % 6) + 1}-10`, 1300 + (i % 3) * 20)
+    );
+    const stats = productStats(observations, NOW);
+    const r = explainRecommendation({
+      currentPrice: 1100, // ~15 % sous la médiane
+      stats,
+      zones: opportunityZones(observations),
+      stability: priceStability(observations),
+    });
+    expect(r.positives.join(" ")).toContain("sous la médiane");
+    expect(r.positives.join(" ")).toContain("20 fois");
+    expect(r.positives.join(" ")).toContain("stables");
   });
 });
 

@@ -48,6 +48,7 @@ export default function ObjetsPage() {
       priceNew: null,
       notes: "",
       checkPoints: "",
+      accessories: [],
     });
     setName("");
     setCreating(false);

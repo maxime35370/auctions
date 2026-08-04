@@ -247,6 +247,8 @@ function ProductEditor({
     notes: product.notes,
     checkPoints: product.checkPoints,
   });
+  const [accessories, setAccessories] = useState(product.accessories);
+  const [newAccessory, setNewAccessory] = useState({ label: "", delta: 10 });
   const [saved, setSaved] = useState(false);
 
   function handleSave(e: React.FormEvent) {
@@ -263,6 +265,7 @@ function ProductEditor({
         priceNew: form.priceNew,
         notes: form.notes,
         checkPoints: form.checkPoints,
+        accessories,
       },
       product.id
     );
@@ -353,6 +356,73 @@ function ProductEditor({
           value={form.notes}
           onChange={(e) => setForm({ ...form, notes: e.target.value })}
         />
+      </div>
+
+      {/* Équipements avec plus-value */}
+      <div className="space-y-2">
+        <label className="field-label">
+          🧩 Équipements avec plus-value{" "}
+          <span className="text-muted">
+            (cochés lot par lot dans l&apos;analyse — ex. alimentation,
+            boîtier, carte SD. Pour les variantes comme la RAM, créez plutôt
+            une fiche par variante.)
+          </span>
+        </label>
+        {accessories.length > 0 && (
+          <ul className="space-y-1.5">
+            {accessories.map((a, i) => (
+              <li key={i} className="flex items-center gap-2 text-sm">
+                <span className="flex-1">{a.label}</span>
+                <span className="text-positive font-medium">+{a.delta} €</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setAccessories(accessories.filter((_, j) => j !== i))
+                  }
+                  className="text-negative text-xs hover:underline"
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="flex gap-2">
+          <input
+            className="field flex-1"
+            placeholder="Ex : Alimentation officielle"
+            value={newAccessory.label}
+            onChange={(e) =>
+              setNewAccessory({ ...newAccessory, label: e.target.value })
+            }
+          />
+          <input
+            className="field w-24"
+            type="number"
+            title="Plus-value en €"
+            value={newAccessory.delta === 0 ? "" : newAccessory.delta}
+            onChange={(e) =>
+              setNewAccessory({
+                ...newAccessory,
+                delta: e.target.value === "" ? 0 : Number(e.target.value),
+              })
+            }
+          />
+          <button
+            type="button"
+            disabled={!newAccessory.label.trim()}
+            onClick={() => {
+              setAccessories([
+                ...accessories,
+                { label: newAccessory.label.trim(), delta: newAccessory.delta },
+              ]);
+              setNewAccessory({ label: "", delta: 10 });
+            }}
+            className="rounded-lg border border-edge px-3 text-sm hover:bg-surface-2 disabled:opacity-40 transition-colors"
+          >
+            + €
+          </button>
+        </div>
       </div>
       <button
         type="submit"

@@ -251,6 +251,130 @@ export function findQuantity(title: string): number | undefined {
   return n >= 2 && n <= 500 ? n : undefined;
 }
 
+// ---------------------------------------------------------------------------
+// Grades et origines (cartels des maisons de vente sur Interencheres,
+// ex. ADN Enchères) — LE signal d'état et de risque des lots.
+// ---------------------------------------------------------------------------
+
+/** Grade → état interne + avertissement. Ordre = du plus spécifique au moins. */
+const GRADES: {
+  re: RegExp;
+  condition: "tres-bon" | "bon" | "a-reparer" | "epave";
+  label: string;
+  warning?: string;
+}[] = [
+  {
+    re: /parfaitement fonctionnel/i,
+    condition: "tres-bon",
+    label: "Parfaitement fonctionnel",
+  },
+  {
+    re: /partiellement fonctionnel/i,
+    condition: "a-reparer",
+    label: "Partiellement fonctionnel",
+    warning: "une ou plusieurs fonctions HS, dégradation rapide à prévoir",
+  },
+  {
+    re: /test d'?allumage/i,
+    condition: "a-reparer",
+    label: "Test d'allumage",
+    warning:
+      "seul l'allumage a été vérifié — fonctionnement réel inconnu, à traiter comme à réparer",
+  },
+  {
+    re: /hors[- ]service/i,
+    condition: "epave",
+    label: "Hors service",
+    warning: "l'appareil ne fonctionne pas — pour pièces ou spécialistes",
+  },
+  {
+    // « fonctionnel » seul (pas précédé de parfaitement/partiellement)
+    re: /(?<!parfaitement )(?<!partiellement )\bfonctionnel\b/i,
+    condition: "bon",
+    label: "Fonctionnel",
+    warning: "dégradation sérieuse de la batterie possible (selon cartel)",
+  },
+];
+
+export interface GradeInfo {
+  label: string;
+  condition: "tres-bon" | "bon" | "a-reparer" | "epave";
+  warning?: string;
+}
+
+/**
+ * Grade de fonctionnement DU LOT.
+ * ⚠ Les pages contiennent souvent la légende CGV où TOUS les grades sont
+ * définis : on ne prend jamais le premier mot trouvé. Priorité :
+ *  1. ligne étiquetée « Grade : X » (fiable même avec la légende) ;
+ *  2. sinon, un grade présent de façon UNIQUE dans le texte ;
+ *  3. plusieurs grades présents sans étiquette → on ne devine pas.
+ */
+export function findGrade(text: string): GradeInfo | undefined {
+  const labeled = text.match(
+    /\bgrade\s*:?\s{0,6}(parfaitement fonctionnel|partiellement fonctionnel|test d'?allumage|hors[- ]service|fonctionnel)/i
+  );
+  if (labeled) {
+    const found = GRADES.find((g) => g.re.test(labeled[1]));
+    if (found)
+      return { label: found.label, condition: found.condition, warning: found.warning };
+  }
+  const present = GRADES.filter((g) => g.re.test(text));
+  if (present.length === 1) {
+    const g = present[0];
+    return { label: g.label, condition: g.condition, warning: g.warning };
+  }
+  return undefined; // légende CGV probable : on ne devine pas
+}
+
+/** Origine du lot → avertissement associé. */
+const ORIGINS: { re: RegExp; label: string; warning: string }[] = [
+  {
+    re: /litige transport/i,
+    label: "Litige transport",
+    warning: "avarie possible pendant le transport, aucune garantie sur l'état",
+  },
+  {
+    re: /retour client/i,
+    label: "Retour client",
+    warning: "produit retourné après usage, aucune garantie sur l'état ni le fonctionnement",
+  },
+  {
+    re: /retour sav/i,
+    label: "Retour SAV",
+    warning: "défaut de fonctionnement présumé, aucune garantie — risque élevé",
+  },
+  {
+    re: /retour d'?entrep[oô]t/i,
+    label: "Retour d'entrepôt",
+    warning: "jamais utilisé, mais défaut de référencement/stockage possible",
+  },
+];
+
+/** Origine du lot (même prudence que pour les grades : étiquette ou unicité). */
+export function findLotOrigin(
+  text: string
+): { label: string; warning: string } | undefined {
+  const labeled = text.match(
+    /\borigine\s*:?\s{0,6}(litige transport|retour client|retour sav|retour d'?entrep[oô]t)/i
+  );
+  if (labeled) {
+    const found = ORIGINS.find((o) => o.re.test(labeled[1]));
+    if (found) return { label: found.label, warning: found.warning };
+  }
+  const present = ORIGINS.filter((o) => o.re.test(text));
+  if (present.length === 1)
+    return { label: present[0].label, warning: present[0].warning };
+  return undefined;
+}
+
+/** Frais additionnels Interencheres (ex. « frais Interencheres de 1,8 % »). */
+export function findExtraFeeNote(text: string): string | undefined {
+  const m = text.match(/frais interencheres de\s*(\d(?:[.,]\d{1,2})?)\s*%/i);
+  if (!m) return undefined;
+  return `Frais Interencheres +${m[1]} % en sus (souvent pris en charge par la maison si paiement CB — vérifier le cartel).`;
+}
+
 /**
  * Lignes parasites des pages réelles : navigation, cookies, RGPD, footer…
  * (liste enrichie au fil des retours sur de vraies pages).
@@ -335,6 +459,19 @@ export function extractFromText(text: string): Partial<StandardAuctionData> {
   // Le prix sert d'ancre : le titre du lot est presque toujours juste à côté.
   const anchorIndex = findPriceAnchorIndex(lines);
 
+  // Cartel de la maison de vente : grade de fonctionnement, origine du lot,
+  // frais additionnels — les avertissements partent dans les commentaires.
+  const grade = findGrade(text);
+  const origin = findLotOrigin(text);
+  const extraFee = findExtraFeeNote(text);
+  const notes: string[] = [];
+  if (grade)
+    notes.push(
+      `Grade annoncé : ${grade.label}${grade.warning ? ` — ⚠ ${grade.warning}` : ""}.`
+    );
+  if (origin) notes.push(`⚠ Origine : ${origin.label} — ${origin.warning}.`);
+  if (extraFee) notes.push(extraFee);
+
   return {
     title: guessTitle(lines, anchorIndex >= 0 ? anchorIndex : undefined),
     currentPrice: findPriceNear(text, PRICE_KEYWORDS) ?? findAnyPrice(text),
@@ -342,6 +479,8 @@ export function extractFromText(text: string): Partial<StandardAuctionData> {
     endDate: findEndDate(text),
     location: findLocation(text),
     auctionHouse: findAuctionHouse(text),
+    rawCondition: grade?.condition,
+    description: notes.length ? notes.join("\n") : undefined,
     photos: [...text.matchAll(/https?:\/\/\S+\.(?:jpe?g|png|webp)\S*/gi)]
       .map((m) => m[0])
       .slice(0, 8),

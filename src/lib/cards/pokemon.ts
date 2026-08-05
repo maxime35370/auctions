@@ -98,6 +98,26 @@ export function buildSearchUrl(q: CardQuery): string {
   return `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(query)}&pageSize=10&orderBy=-set.releaseDate`;
 }
 
+import { POKEDEX_FR_EN } from "./pokedex-fr-en";
+
+/**
+ * Traduit un nom (normalisé) français → anglais via le dictionnaire embarqué.
+ * Essaie le nom complet, puis mot à mot (« plumeline » → « oricorio »).
+ * Renvoie undefined si rien n'est traduisible.
+ */
+export function translateFrName(normalized: string): string | undefined {
+  const direct = POKEDEX_FR_EN[normalized];
+  if (direct) return direct;
+  const words = normalized.split(" ");
+  let changed = false;
+  const translated = words.map((w) => {
+    const t = POKEDEX_FR_EN[w];
+    if (t) changed = true;
+    return t ?? w;
+  });
+  return changed ? translated.join(" ") : undefined;
+}
+
 /** Normalisation pour comparer les noms : accents, tirets, casse, suffixes. */
 const normName = (s: string) =>
   s
@@ -124,9 +144,16 @@ export function pickMatch(
   if (q.name) {
     const wanted = normName(q.name);
     if (wanted.length >= 3) {
+      // Candidats : le nom saisi tel quel (anglais ou racine commune),
+      // puis sa traduction via le dictionnaire embarqué FR → EN
+      // (« plumeline » → « oricorio », « pingoleon » → « empoleon »…).
+      const wantedVariants = [wanted];
+      const translated = translateFrName(wanted);
+      if (translated) wantedVariants.push(translated);
+
       const byName = cards.find((c) => {
         const got = normName(c.name);
-        return got.includes(wanted) || wanted.includes(got);
+        return wantedVariants.some((w) => got.includes(w) || w.includes(got));
       });
       if (byName)
         return { card: byName, matchCount: cards.length, nameMismatch: false };

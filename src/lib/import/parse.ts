@@ -23,16 +23,37 @@ export function parseFrenchNumber(raw: string): number | undefined {
 }
 
 /**
- * Cherche un prix en € proche d'un des mots-clés donnés.
- * Ex. « Enchère actuelle : 1 250 € » → 1250.
+ * Libellés de prix rencontrés sur les sites d'enchères français
+ * (Interencheres, Agorastore…). Ordre = priorité.
+ */
+export const PRICE_KEYWORDS = [
+  "ench[eè]re en cours",
+  "ench[eè]re actuelle",
+  "derni[eè]re ench[eè]re",
+  "offre actuelle",
+  "derni[eè]re offre",
+  "montant de l'ench[eè]re",
+  "prix actuel",
+  "adjug[eé][\\w ]{0,10}",
+  "mise [aà] prix",
+  "prix de d[eé]part",
+  "estimation",
+];
+
+/**
+ * Cherche un prix en € proche d'un des mots-clés donnés — dans les deux sens
+ * (« Enchère en cours : 210 € » ET « 210 €\nEnchère en cours », les pages
+ * réelles mettent souvent le libellé et le montant sur des lignes séparées).
  */
 export function findPriceNear(text: string, keywords: string[]): number | undefined {
+  const PRICE = "(\\d[\\d\\s\\u00a0\\u202f.,]*)\\s*€";
   for (const kw of keywords) {
-    const re = new RegExp(
-      `${kw}[^0-9€]{0,40}?(\\d[\\d\\s\\u00a0\\u202f.,]*)\\s*€`,
-      "i"
-    );
-    const m = text.match(re);
+    // mot-clé … prix (fenêtre large : traverse les sauts de ligne)
+    let m = text.match(new RegExp(`${kw}[^0-9€]{0,90}?${PRICE}`, "i"));
+    if (!m) {
+      // prix … mot-clé (montant affiché avant son libellé)
+      m = text.match(new RegExp(`${PRICE}[^0-9€]{0,60}?${kw}`, "i"));
+    }
     if (m) {
       const n = parseFrenchNumber(m[1]);
       if (n !== undefined && n > 0) return n;
@@ -47,11 +68,11 @@ export function findAnyPrice(text: string): number | undefined {
   return m ? parseFrenchNumber(m[1]) : undefined;
 }
 
-/** Frais acheteur : « frais … 24 % » / « 24% TTC de frais ». */
+/** Frais acheteur : « frais de vente : 24,66 % TTC », « commission 20% »… */
 export function findBuyerFeePct(text: string): number | undefined {
   const patterns = [
-    /frais[^%]{0,60}?(\d{1,2}(?:[.,]\d{1,2})?)\s*%/i,
-    /(\d{1,2}(?:[.,]\d{1,2})?)\s*%[^.]{0,30}frais/i,
+    /(?:frais|commission)[^%]{0,80}?(\d{1,2}(?:[.,]\d{1,2})?)\s*%/i,
+    /(\d{1,2}(?:[.,]\d{1,2})?)\s*%[^.]{0,40}(?:frais|commission)/i,
   ];
   for (const re of patterns) {
     const m = text.match(re);
@@ -230,33 +251,78 @@ export function findQuantity(title: string): number | undefined {
   return n >= 2 && n <= 500 ? n : undefined;
 }
 
-/** Mots typiques de la navigation / des en-têtes de site (à éviter en titre). */
+/**
+ * Lignes parasites des pages réelles : navigation, cookies, RGPD, footer…
+ * (liste enrichie au fil des retours sur de vraies pages).
+ */
 const BOILERPLATE =
-  /vente aux ench[eè]res|interencheres|agorastore|cookies|se connecter|mon compte|recherche|menu|accueil/i;
+  /vente aux ench[eè]res|interencheres|agorastore|ench[eè]res[- ]domaine|cookies?|se connecter|connexion|inscription|mon compte|mes listes|favoris|panier|rechercher|recherche|menu|accueil|newsletter|mentions l[eé]gales|cgv|conditions g[eé]n[eé]rales|donn[eé]es personnelles|rgpd|aide|contact|filtre|trier par|cat[eé]gories?|toutes les|prochaines ventes|[aà] la une|voir plus|en savoir plus|t[eé]l[eé]charger|comment (?:ach|vend)|fonctionne|s'abonner|suivre/i;
+
+/** Ligne qui n'est qu'une date / heure / jour de semaine (pas un titre). */
+const DATE_LINE =
+  /^(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)?\s*\d{0,2}\s*(?:janvier|f[eé]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[eé]cembre|\d{1,2}\/\d{1,2})?\s*\d{0,4}\s*(?:[aà]\s*\d{1,2}[h:]\d{0,2})?$/i;
+
+function titleScore(line: string): number {
+  let score = Math.min(line.length, 80) / 20;
+  if (/\blot\b|n[°º]/i.test(line)) score += 3;
+  if (/\d/.test(line)) score += 1;
+  if (BOILERPLATE.test(line)) score -= 8;
+  if (DATE_LINE.test(line)) score -= 8;
+  if (/€|%/.test(line)) score -= 4; // une ligne de prix n'est pas un titre
+  return score;
+}
 
 /**
- * Devine le titre du lot parmi les premières lignes : on privilégie une ligne
- * descriptive (« Lot de… », présence de chiffres/modèle) et on écarte les
- * en-têtes de site.
+ * Devine le titre du lot. Stratégie : sur les vraies pages, le titre est
+ * presque toujours À PROXIMITÉ DU PRIX (quelques lignes au-dessus) — bien
+ * plus fiable que « première ligne plausible », qui attrape les menus.
+ * `anchorIndex` = index de la ligne où le prix/libellé d'enchère a été trouvé.
  */
-function guessTitle(lines: string[]): string | undefined {
-  const candidates = lines
-    .filter((l) => l.length >= 10 && l.length <= 140 && !l.startsWith("http"))
-    .slice(0, 12);
+export function guessTitle(
+  lines: string[],
+  anchorIndex?: number
+): string | undefined {
+  const isCandidate = (l: string) =>
+    l.length >= 10 && l.length <= 140 && !l.startsWith("http");
 
   let best: string | undefined;
   let bestScore = -Infinity;
-  for (const line of candidates) {
-    let score = Math.min(line.length, 80) / 20;
-    if (/\blot\b|n[°º]/i.test(line)) score += 3;
-    if (/\d/.test(line)) score += 1;
-    if (BOILERPLATE.test(line)) score -= 6;
+
+  const consider = (line: string, proximityBonus: number) => {
+    if (!isCandidate(line)) return;
+    const score = titleScore(line) + proximityBonus;
     if (score > bestScore) {
       bestScore = score;
       best = line;
     }
+  };
+
+  if (anchorIndex !== undefined && anchorIndex >= 0) {
+    // Fenêtre ancrée : les 15 lignes précédant le prix (les plus proches
+    // reçoivent un léger bonus), puis les 3 suivantes.
+    for (let i = Math.max(0, anchorIndex - 15); i < anchorIndex; i++) {
+      consider(lines[i], 2 + (i - Math.max(0, anchorIndex - 15)) * 0.1);
+    }
+    for (let i = anchorIndex + 1; i <= Math.min(lines.length - 1, anchorIndex + 3); i++) {
+      consider(lines[i], 1);
+    }
+    if (best && bestScore > 0) return best;
   }
-  return best;
+
+  // Repli : balayage global (page entière, pas seulement le début).
+  best = undefined;
+  bestScore = -Infinity;
+  for (const line of lines) consider(line, 0);
+  return bestScore > 0 ? best : undefined;
+}
+
+/** Index de la première ligne contenant un libellé de prix d'enchère. */
+export function findPriceAnchorIndex(lines: string[]): number {
+  const re = new RegExp(PRICE_KEYWORDS.join("|"), "i");
+  const idx = lines.findIndex((l) => re.test(l));
+  if (idx >= 0) return idx;
+  // Sinon : première ligne contenant un montant en €.
+  return lines.findIndex((l) => /\d[\d\s  .,]*\s*€/.test(l));
 }
 
 /** Extraction best-effort depuis du texte libre collé par l'utilisateur. */
@@ -266,15 +332,16 @@ export function extractFromText(text: string): Partial<StandardAuctionData> {
     .map((l) => l.trim())
     .filter(Boolean);
 
+  // Le prix sert d'ancre : le titre du lot est presque toujours juste à côté.
+  const anchorIndex = findPriceAnchorIndex(lines);
+
   return {
-    title: guessTitle(lines),
-    currentPrice:
-      findPriceNear(text, [
-        "ench[eè]re actuelle", "prix actuel", "derni[eè]re ench[eè]re",
-        "mise [aà] prix", "prix de d[eé]part", "estimation",
-      ]) ?? findAnyPrice(text),
+    title: guessTitle(lines, anchorIndex >= 0 ? anchorIndex : undefined),
+    currentPrice: findPriceNear(text, PRICE_KEYWORDS) ?? findAnyPrice(text),
     buyerFeePct: findBuyerFeePct(text),
     endDate: findEndDate(text),
+    location: findLocation(text),
+    auctionHouse: findAuctionHouse(text),
     photos: [...text.matchAll(/https?:\/\/\S+\.(?:jpe?g|png|webp)\S*/gi)]
       .map((m) => m[0])
       .slice(0, 8),

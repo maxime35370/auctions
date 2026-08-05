@@ -9,11 +9,13 @@ import {
   explainRecommendation,
   marketIndex,
   matchesTitle,
+  explainOpportunity,
   measuredPopularity,
   measuredProbabilities,
   myVsMarket,
   opportunityVerdict,
   opportunityZones,
+  recommendationConfidence,
   platformStats,
   priceStability,
   productStats,
@@ -302,6 +304,52 @@ describe("graduation — heuristique → estimé → mesuré", () => {
     expect(r.positives.join(" ")).toContain("sous la médiane");
     expect(r.positives.join(" ")).toContain("20 fois");
     expect(r.positives.join(" ")).toContain("stables");
+  });
+});
+
+describe("recommendationConfidence — distincte du score de l'affaire", () => {
+  it("excellent objet, données faibles → confiance basse", () => {
+    const r = recommendationConfidence(100); // saisie complète, aucun produit
+    expect(r.value).toBeLessThanOrEqual(40);
+    expect(r.basis).toContain("estimations");
+  });
+
+  it("données produit solides → confiance haute", () => {
+    const r = recommendationConfidence(100, 95);
+    expect(r.value).toBeGreaterThanOrEqual(90);
+    expect(r.basis).toContain("observations réelles");
+  });
+
+  it("données produit moyennes + saisie incomplète → confiance dégradée", () => {
+    const r = recommendationConfidence(30, 50);
+    expect(r.value).toBe(46); // 50×0,8 + 30×0,2
+  });
+});
+
+describe("explainOpportunity — « Pourquoi ce seuil ? »", () => {
+  it("explique avec des faits mesurés", () => {
+    const observations = Array.from({ length: 20 }, (_, i) =>
+      obs(`2026-0${(i % 6) + 1}-10`, 1200 + i * 20)
+    );
+    const zones = opportunityZones(observations)!;
+    const reasons = explainOpportunity({
+      zones,
+      observations,
+      trendPct: 8,
+      performance: {
+        myAvgSale: 1404,
+        marketMedianSale: 1300,
+        diffPct: 8,
+        mySaleCount: 3,
+        marketSaleCount: 17,
+      },
+      saleDelay: { avgDays: 6, count: 4 },
+    });
+    const all = reasons.join(" | ");
+    expect(all).toMatch(/\d+ % des prix observés sont au-dessus/);
+    expect(all).toContain("Les prix montent (+8 %");
+    expect(all).toContain("8 % au-dessus de la médiane");
+    expect(all).toContain("6 jours");
   });
 });
 

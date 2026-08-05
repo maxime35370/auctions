@@ -16,7 +16,11 @@ export function ConfidenceBadge({ value }: { value: number }) {
   );
 }
 
-/** 🟢 Mesuré / 🟡 Estimé / 🔴 Heuristique — sur quoi repose l'information. */
+/**
+ * Sur quoi repose l'information — libellés grand public :
+ * 🟢 Très fiable / 🟡 Fiabilité moyenne / 🔴 Estimation.
+ * (Identifiants techniques internes : mesure / estime / heuristique.)
+ */
 export function ProvenanceBadge({
   value,
 }: {
@@ -24,19 +28,19 @@ export function ProvenanceBadge({
 }) {
   if (!value) return null;
   const meta = {
-    mesure: { label: "🟢 Mesuré", cls: "border-positive/40 text-positive" },
-    estime: { label: "🟡 Estimé", cls: "border-accent/40 text-accent" },
-    heuristique: { label: "🔴 Heuristique", cls: "border-edge text-muted" },
+    mesure: { label: "🟢 Très fiable", cls: "border-positive/40 text-positive" },
+    estime: { label: "🟡 Fiabilité moyenne", cls: "border-accent/40 text-accent" },
+    heuristique: { label: "🔴 Estimation", cls: "border-edge text-muted" },
   }[value];
   return (
     <span
       className={`rounded-full border px-1.5 py-0.5 text-[10px] whitespace-nowrap ${meta.cls}`}
       title={
         value === "mesure"
-          ? "Basé sur ≥ 30 points de données réels"
+          ? "Basé sur plus de 30 observations réelles"
           : value === "estime"
-            ? "Basé sur 10 à 29 points de données"
-            : "Valeur prédéfinie — remplacée automatiquement quand les données arrivent"
+            ? "Basé sur quelques observations (10 à 29)"
+            : "Pas encore assez de données — valeur indicative, remplacée automatiquement quand les observations arrivent"
       }
     >
       {meta.label}

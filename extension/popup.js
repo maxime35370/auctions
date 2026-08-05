@@ -99,6 +99,31 @@ function grabPage(mode) {
   const og = document.querySelector('meta[property="og:description"], meta[name="description"]');
   if (og) fields.description = (og.getAttribute("content") ?? "").slice(0, 500);
 
+  // Frais plateforme (Interencheres 1,8 %, Live…)
+  const pf = text.match(/frais\s+(?:interencheres|live|de plateforme)[^%]{0,30}?(\d{1,2}(?:[.,]\d{1,2})?)\s*%/i);
+  if (pf) {
+    const n = num(pf[1]);
+    if (n !== undefined && n > 0 && n <= 10) fields.platformFeePct = n;
+  }
+
+  // 📦 Livraison : toutes formulations, avec la sécurité « sur devis »
+  const SHIP = "(?:livraison|exp[eé]dition|frais d'envoi|envoi|transport|colissimo|chronopost|mondial relay|point relais)";
+  const shipQuote = new RegExp(SHIP + "[^\\n]{0,60}(?:sur devis|nous contacter|nous consulter|[aà] la demande)", "i").test(text);
+  if (shipQuote) {
+    fields.shippingOnQuote = true; // coût inconnu — jamais 0 €
+  } else {
+    const sf =
+      text.match(new RegExp(SHIP + "[^\\n€]{0,40}?france[^0-9€]{0,40}?" + PRICE, "i")) ??
+      text.match(new RegExp(SHIP + "[^0-9€\\n]{0,40}?" + PRICE, "i"));
+    if (sf) {
+      const n = num(sf[1]);
+      if (n !== undefined && n > 0 && n < 5000) fields.shippingCost = n;
+    }
+  }
+  if (/retrait\s+(?:sur place\s+)?uniquement|enl[eè]vement\s+(?:sur place\s+)?uniquement|pas d'exp[eé]dition|aucune (?:livraison|exp[eé]dition)/i.test(text)) {
+    fields.pickupOnly = true;
+  }
+
   const meta = Array.from(
     document.querySelectorAll('head meta, head title, script[type="application/ld+json"]')
   )

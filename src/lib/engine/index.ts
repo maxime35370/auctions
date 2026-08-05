@@ -10,13 +10,13 @@
 import { computeCosts, computeMaxBudget, computeScenarios, totalTime } from "./costs";
 import { computeScore, verdictFromScore } from "./scoring";
 import { recommendStrategy } from "./strategy";
-import { checklistFor, explainScore, recommendPlatforms } from "./advice";
+import { checklistFor, explainScore, lotOriginMeta, recommendPlatforms } from "./advice";
 import type { AuctionAnalysis, AuctionInput } from "./types";
 
 export * from "./types";
 export * from "./knowledge";
 export { TARGET_ROI } from "./costs";
-export { checklistFor, recommendPlatforms } from "./advice";
+export { checklistFor, LOT_ORIGINS, lotOriginMeta, recommendPlatforms } from "./advice";
 
 /**
  * Analyse complète d'une enchère à partir des données saisies.
@@ -44,6 +44,22 @@ export function analyzeAuction(
   const strategy = recommendStrategy(input, scenarios);
   const bestProfit = Math.max(...scenarios.map((s) => s.netProfit));
 
+  // L'origine du lot est expliquée dans les points faibles (pénalités
+  // mécaniques : risque, budget max, confiance).
+  const explanation = explainScore(criteria);
+  const origin = lotOriginMeta(input.lotOrigin);
+  if (origin) {
+    explanation.negatives.unshift(
+      `Origine « ${origin.label} » : ${origin.note} — risque +${origin.riskPenalty}, budget max réduit de ${origin.budgetReductionPct} %`
+    );
+  }
+
+  // ⏱ Bénéfice par heure investie : 100 € en 2 h ≠ 30 € en 15 h.
+  const hourlyProfit =
+    totalTimeHours > 0
+      ? Math.round((normal.netProfit / totalTimeHours) * 10) / 10
+      : undefined;
+
   return {
     totalCost,
     costBreakdown,
@@ -53,12 +69,13 @@ export function analyzeAuction(
     roi: normal.roi,
     scenarios,
     totalTimeHours,
+    hourlyProfit,
     meetsMinProfit: bestProfit >= input.minProfitTarget,
     strategy,
     score,
     stars,
     criteria,
-    explanation: explainScore(criteria),
+    explanation,
     platforms: recommendPlatforms(input.category),
     verdict,
     verdictLabel,
@@ -70,11 +87,13 @@ export function emptyAuctionInput(): AuctionInput {
   return {
     currentPrice: 0,
     buyerFeePct: 0,
+    platformFeePct: 0,
     vatPct: 0,
     travelCost: 0,
     shippingCost: 0,
     condition: "bon",
     category: "autre",
+    lotOrigin: "",
     minProfitTarget: 100,
     sellingFeePct: 0,
     sellingMiscCost: 0,

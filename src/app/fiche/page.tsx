@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   analyzeAuction,
+  lotOriginMeta,
   measuredPopularity,
   measuredProbabilities,
   productStats,
@@ -95,7 +96,8 @@ function FicheContent() {
   const analysis = analyzeAuction(record, knowledgeCtx);
   const confidence = recommendationConfidence(
     analysis.criteria.find((c) => c.key === "confiance")?.value ?? 0,
-    productConfidence
+    productConfidence,
+    lotOriginMeta(record.lotOrigin)?.confidencePenalty ?? 0
   );
   const conditionLabel =
     CONDITIONS.find((c) => c.value === record.condition)?.label ??

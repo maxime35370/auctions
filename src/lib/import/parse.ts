@@ -328,24 +328,28 @@ export function findGrade(text: string): GradeInfo | undefined {
 }
 
 /** Origine du lot → avertissement associé. */
-const ORIGINS: { re: RegExp; label: string; warning: string }[] = [
+const ORIGINS: { re: RegExp; slug: string; label: string; warning: string }[] = [
   {
     re: /litige transport/i,
+    slug: "litige-transport",
     label: "Litige transport",
     warning: "avarie possible pendant le transport, aucune garantie sur l'état",
   },
   {
     re: /retour client/i,
+    slug: "retour-client",
     label: "Retour client",
     warning: "produit retourné après usage, aucune garantie sur l'état ni le fonctionnement",
   },
   {
     re: /retour sav/i,
+    slug: "retour-sav",
     label: "Retour SAV",
     warning: "défaut de fonctionnement présumé, aucune garantie — risque élevé",
   },
   {
     re: /retour d'?entrep[oô]t/i,
+    slug: "retour-entrepot",
     label: "Retour d'entrepôt",
     warning: "jamais utilisé, mais défaut de référencement/stockage possible",
   },
@@ -354,25 +358,86 @@ const ORIGINS: { re: RegExp; label: string; warning: string }[] = [
 /** Origine du lot (même prudence que pour les grades : étiquette ou unicité). */
 export function findLotOrigin(
   text: string
-): { label: string; warning: string } | undefined {
+): { slug: string; label: string; warning: string } | undefined {
   const labeled = text.match(
     /\borigine\s*:?\s{0,6}(litige transport|retour client|retour sav|retour d'?entrep[oô]t)/i
   );
   if (labeled) {
     const found = ORIGINS.find((o) => o.re.test(labeled[1]));
-    if (found) return { label: found.label, warning: found.warning };
+    if (found)
+      return { slug: found.slug, label: found.label, warning: found.warning };
   }
   const present = ORIGINS.filter((o) => o.re.test(text));
   if (present.length === 1)
-    return { label: present[0].label, warning: present[0].warning };
+    return {
+      slug: present[0].slug,
+      label: present[0].label,
+      warning: present[0].warning,
+    };
   return undefined;
 }
 
-/** Frais additionnels Interencheres (ex. « frais Interencheres de 1,8 % »). */
-export function findExtraFeeNote(text: string): string | undefined {
-  const m = text.match(/frais interencheres de\s*(\d(?:[.,]\d{1,2})?)\s*%/i);
+/** Frais de plateforme (« frais Interencheres de 1,8 % », « frais Live 3 % »). */
+export function findPlatformFeePct(text: string): number | undefined {
+  const m = text.match(
+    /frais\s+(?:interencheres|live|de plateforme)[^%]{0,30}?(\d{1,2}(?:[.,]\d{1,2})?)\s*%/i
+  );
   if (!m) return undefined;
-  return `Frais Interencheres +${m[1]} % en sus (souvent pris en charge par la maison si paiement CB — vérifier le cartel).`;
+  const n = parseFrenchNumber(m[1]);
+  return n !== undefined && n > 0 && n <= 10 ? n : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Livraison — toutes les formulations, avec la sécurité « sur devis »
+// ---------------------------------------------------------------------------
+
+/** Mots annonçant un coût d'expédition, toutes maisons confondues. */
+const SHIPPING_WORDS =
+  "(?:livraison|exp[eé]dition|frais d'envoi|envoi|transport|colissimo|chronopost|mondial relay|point relais)";
+
+export interface ShippingInfo {
+  /** Livraison France, en € (si trouvée). */
+  france?: number;
+  /** Livraison Europe, en € (si trouvée). */
+  europe?: number;
+  /** « Sur devis » / « nous contacter » : coût inconnu — ne JAMAIS mettre 0. */
+  onQuote: boolean;
+  /** Retrait sur place uniquement : prévoir le déplacement. */
+  pickupOnly: boolean;
+}
+
+/** Extrait la zone livraison d'une annonce (Retrait et livraison…). */
+export function findShipping(text: string): ShippingInfo {
+  const PRICE = "(\\d[\\d\\s\\u00a0\\u202f.,]*)\\s*€";
+  const price = (re: RegExp): number | undefined => {
+    const m = text.match(re);
+    if (!m) return undefined;
+    const n = parseFrenchNumber(m[1]);
+    return n !== undefined && n > 0 && n < 5000 ? n : undefined;
+  };
+
+  const france = price(
+    new RegExp(`${SHIPPING_WORDS}[^\\n€]{0,40}?france[^0-9€]{0,40}?${PRICE}`, "i")
+  );
+  const europe = price(
+    new RegExp(`${SHIPPING_WORDS}[^\\n€]{0,40}?europe[^0-9€]{0,40}?${PRICE}`, "i")
+  );
+  // Formulation sans zone géographique (« Frais d'envoi : 12 € »).
+  const generic =
+    france ??
+    price(new RegExp(`${SHIPPING_WORDS}[^0-9€\\n]{0,40}?${PRICE}`, "i"));
+
+  const onQuote = new RegExp(
+    `${SHIPPING_WORDS}[^\\n]{0,60}(?:sur devis|nous contacter|nous consulter|[aà] la demande)`,
+    "i"
+  ).test(text);
+
+  const pickupOnly =
+    /retrait\s+(?:sur place\s+)?uniquement|enl[eè]vement\s+(?:sur place\s+)?uniquement|pas d'exp[eé]dition|aucune (?:livraison|exp[eé]dition)|ne (?:sera|seront) pas exp[eé]di/i.test(
+      text
+    );
+
+  return { france: france ?? generic, europe, onQuote, pickupOnly };
 }
 
 /**
@@ -459,27 +524,46 @@ export function extractFromText(text: string): Partial<StandardAuctionData> {
   // Le prix sert d'ancre : le titre du lot est presque toujours juste à côté.
   const anchorIndex = findPriceAnchorIndex(lines);
 
-  // Cartel de la maison de vente : grade de fonctionnement, origine du lot,
-  // frais additionnels — les avertissements partent dans les commentaires.
+  // Cartel de la maison de vente : grade, origine, frais plateforme,
+  // livraison — les avertissements partent dans les commentaires.
   const grade = findGrade(text);
   const origin = findLotOrigin(text);
-  const extraFee = findExtraFeeNote(text);
+  const platformFeePct = findPlatformFeePct(text);
+  const shipping = findShipping(text);
+
   const notes: string[] = [];
   if (grade)
     notes.push(
       `Grade annoncé : ${grade.label}${grade.warning ? ` — ⚠ ${grade.warning}` : ""}.`
     );
   if (origin) notes.push(`⚠ Origine : ${origin.label} — ${origin.warning}.`);
-  if (extraFee) notes.push(extraFee);
+  if (platformFeePct !== undefined)
+    notes.push(
+      `Frais plateforme ${platformFeePct} % inclus au calcul (parfois pris en charge si paiement CB — vérifier le cartel).`
+    );
+  if (shipping.onQuote)
+    notes.push(
+      "⚠ Livraison sur devis / à confirmer auprès de la maison — coût NON inclus dans le calcul, ne pas le laisser à 0 €."
+    );
+  if (shipping.pickupOnly)
+    notes.push("⚠ Retrait sur place uniquement — prévoir le coût de déplacement.");
+  if (shipping.europe !== undefined)
+    notes.push(`Livraison Europe : ${shipping.europe} €.`);
 
   return {
     title: guessTitle(lines, anchorIndex >= 0 ? anchorIndex : undefined),
     currentPrice: findPriceNear(text, PRICE_KEYWORDS) ?? findAnyPrice(text),
     buyerFeePct: findBuyerFeePct(text),
+    platformFeePct,
+    // Sur devis : on ne met SURTOUT pas 0 — le champ reste vide.
+    shippingCost: shipping.onQuote ? undefined : shipping.france,
+    shippingOnQuote: shipping.onQuote || undefined,
+    pickupOnly: shipping.pickupOnly || undefined,
     endDate: findEndDate(text),
     location: findLocation(text),
     auctionHouse: findAuctionHouse(text),
     rawCondition: grade?.condition,
+    lotOrigin: origin?.slug,
     description: notes.length ? notes.join("\n") : undefined,
     photos: [...text.matchAll(/https?:\/\/\S+\.(?:jpe?g|png|webp)\S*/gi)]
       .map((m) => m[0])

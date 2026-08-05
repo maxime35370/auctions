@@ -147,6 +147,50 @@ describe("extractFromText — page Interencheres réaliste (menus, parasites)", 
   });
 });
 
+describe("livraison — toutes formulations et sécurité « sur devis »", () => {
+  it("détecte « Livraison France 21,60 € » et « Livraison Europe 38,28 € »", async () => {
+    const { findShipping } = await import("../parse");
+    const s = findShipping(
+      "RETRAIT ET LIVRAISON\nLivraison France\n21,60 €\nLivraison Europe\n38,28 €"
+    );
+    expect(s.france).toBe(21.6);
+    expect(s.europe).toBe(38.28);
+    expect(s.onQuote).toBe(false);
+  });
+
+  it("reconnaît les autres formulations (expédition, frais d'envoi, Colissimo…)", async () => {
+    const { findShipping } = await import("../parse");
+    expect(findShipping("Expédition France : 15 €").france).toBe(15);
+    expect(findShipping("Frais d'envoi : 12,50 €").france).toBe(12.5);
+    expect(findShipping("Colissimo : 9,90 €").france).toBe(9.9);
+    expect(findShipping("Mondial Relay 6,99 €").france).toBe(6.99);
+  });
+
+  it("« sur devis » / « nous contacter » → coût inconnu, JAMAIS 0", async () => {
+    const { findShipping } = await import("../parse");
+    expect(findShipping("Livraison : sur devis").onQuote).toBe(true);
+    expect(findShipping("Expédition : nous contacter").onQuote).toBe(true);
+    const d = extractFromText("Lot de 2 objets divers\nEnchère en cours : 50 €\nLivraison sur devis");
+    expect(d.shippingCost).toBeUndefined();
+    expect(d.shippingOnQuote).toBe(true);
+    expect(d.description).toContain("Livraison sur devis");
+  });
+
+  it("détecte le retrait sur place uniquement", async () => {
+    const { findShipping } = await import("../parse");
+    expect(findShipping("Retrait sur place uniquement, pas d'expédition").pickupOnly).toBe(true);
+  });
+
+  it("frais plateforme extraits en nombre et inclus au brouillon", async () => {
+    const { findPlatformFeePct } = await import("../parse");
+    expect(findPlatformFeePct("Les frais Interencheres de 1,8% sont pris en charge")).toBe(1.8);
+    const { toDraft } = await import("../importer");
+    const draft = toDraft({ platformFeePct: 1.8, shippingCost: 21.6, currentPrice: 300, buyerFeePct: 24 });
+    expect(draft.platformFeePct).toBe(1.8);
+    expect(draft.shippingCost).toBe(21.6);
+  });
+});
+
 describe("cartels de maisons de vente — grades, origines, frais additionnels", () => {
   // Reproduction du cartel ADN Enchères (Interencheres) : la légende CGV
   // contient TOUS les grades — le piège classique.
@@ -198,10 +242,11 @@ describe("cartels de maisons de vente — grades, origines, frais additionnels",
     const page = `Lot n° 12\nLot de 2 appareils photo Lumix DMC-G7\nEnchère en cours\n85,00 €\nGrade : Hors Service\nOrigine : Retour SAV\n${legende}`;
     const d = extractFromText(page);
     expect(d.buyerFeePct).toBe(26);
+    expect(d.platformFeePct).toBe(1.8); // vrai champ, inclus au calcul
     expect(d.rawCondition).toBe("epave");
     expect(d.description).toContain("Hors service");
     expect(d.description).toContain("Retour SAV");
-    expect(d.description).toContain("+1,8 %");
+    expect(d.description).toContain("Frais plateforme 1.8 %");
     expect(d.currentPrice).toBe(85);
   });
 

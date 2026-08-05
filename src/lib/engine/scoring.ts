@@ -15,6 +15,7 @@
  * des heuristiques ci-dessous — l'interface `ScoreCriterion` ne changera pas.
  */
 
+import { lotOriginMeta } from "./advice";
 import type {
   AuctionAnalysis,
   AuctionInput,
@@ -80,12 +81,17 @@ export function scoreRefurb(totalTimeHours: number): number {
  * Combine l'état du lot et le poids des frais fixes (déplacement + livraison)
  * dans le coût total : des frais fixes élevés sont perdus si le lot déçoit.
  */
-export function scoreRisk(input: AuctionInput, totalCost: number): number {
+export function scoreRisk(
+  input: AuctionInput,
+  totalCost: number,
+  originRiskPenalty = 0
+): number {
   const conditionRisk = CONDITION_RISK[input.condition] ?? 40;
   const fixedShare =
     totalCost > 0 ? (input.travelCost + input.shippingCost) / totalCost : 0;
   const fixedRisk = clamp(fixedShare * 200); // 50 % de frais fixes → risque max
-  return clamp(100 - (conditionRisk * 0.7 + fixedRisk * 0.3));
+  // L'origine du lot (retour client, SAV…) ajoute un risque mécanique.
+  return clamp(100 - (conditionRisk * 0.7 + fixedRisk * 0.3) - originRiskPenalty);
 }
 
 /** Confiance : proportion d'informations réellement renseignées. */
@@ -134,7 +140,7 @@ export function computeScore(
     { key: "faciliteRevente", label: "Facilité de revente", weight: 0.15, value: Math.round(scoreLiquidity(input)) },
     popularity,
     { key: "remiseEnEtat", label: "Temps de travail", weight: 0.1, value: Math.round(scoreRefurb(totalTimeHours)) },
-    { key: "risque", label: "Risque maîtrisé", weight: 0.2, value: Math.round(scoreRisk(input, totalCost)) },
+    { key: "risque", label: "Risque maîtrisé", weight: 0.2, value: Math.round(scoreRisk(input, totalCost, lotOriginMeta(input.lotOrigin)?.riskPenalty ?? 0)) },
     { key: "confiance", label: "Confiance", weight: 0.1, value: Math.round(scoreConfidence(input)) },
   ];
 

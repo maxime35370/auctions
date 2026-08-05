@@ -17,6 +17,8 @@ import {
   averageSaleDelay,
   dataMaturity,
   explainRecommendation,
+  LOT_ORIGINS,
+  lotOriginMeta,
   measuredPopularity,
   measuredProbabilities,
   myVsMarket,
@@ -191,9 +193,10 @@ export function AuctionForm({
       analysis.criteria.find((c) => c.key === "confiance")?.value ?? 0;
     return recommendationConfidence(
       completeness,
-      knownStats && knownStats.count > 0 ? knownStats.confidence : undefined
+      knownStats && knownStats.count > 0 ? knownStats.confidence : undefined,
+      lotOriginMeta(values.lotOrigin)?.confidencePenalty ?? 0
     );
-  }, [analysis, knownStats]);
+  }, [analysis, knownStats, values.lotOrigin]);
   const totalHours =
     values.refurbHours +
     values.cleaningHours +
@@ -289,6 +292,24 @@ export function AuctionForm({
               </select>
             </div>
             <div>
+              <label className="field-label">
+                Origine du lot{" "}
+                <span className="text-muted">(pénalise risque et budget)</span>
+              </label>
+              <select
+                className="field"
+                value={values.lotOrigin}
+                onChange={(e) => set("lotOrigin", e.target.value)}
+              >
+                <option value="">Aucune / inconnue</option>
+                {LOT_ORIGINS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label} (budget −{o.budgetReductionPct} %)
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label className="field-label">Maison de vente</label>
               <input
                 className="field"
@@ -333,6 +354,13 @@ export function AuctionForm({
           <div className="grid grid-cols-2 gap-3">
             <NumberField label="Prix actuel (€)" value={values.currentPrice} onChange={num("currentPrice")} />
             <NumberField label="Frais acheteur (%)" value={values.buyerFeePct} onChange={num("buyerFeePct")} step={0.1} />
+            <NumberField
+              label="Frais plateforme (%)"
+              value={values.platformFeePct}
+              onChange={num("platformFeePct")}
+              step={0.1}
+              hint="Interencheres 1,8 %, frais Live…"
+            />
             <NumberField label="TVA (%)" value={values.vatPct} onChange={num("vatPct")} step={0.1} />
             <NumberField label="Déplacement (€)" value={values.travelCost} onChange={num("travelCost")} />
             <NumberField label="Livraison (€)" value={values.shippingCost} onChange={num("shippingCost")} />

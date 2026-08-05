@@ -22,6 +22,14 @@ export interface ExtensionFields {
   description?: string;
   currentPrice?: number;
   buyerFeePct?: number;
+  /** Frais de plateforme (Interencheres, Live…), en %. */
+  platformFeePct?: number;
+  /** Livraison France, en €. */
+  shippingCost?: number;
+  /** Livraison sur devis / nous contacter (coût inconnu, jamais 0). */
+  shippingOnQuote?: boolean;
+  /** Retrait sur place uniquement. */
+  pickupOnly?: boolean;
   location?: string;
   auctionHouse?: string;
   /** YYYY-MM-DD */
@@ -95,6 +103,10 @@ export function decodeExtensionPayload(
               description: str(f.description),
               currentPrice: num(f.currentPrice),
               buyerFeePct: num(f.buyerFeePct),
+              platformFeePct: num(f.platformFeePct),
+              shippingCost: num(f.shippingCost),
+              shippingOnQuote: f.shippingOnQuote === true || undefined,
+              pickupOnly: f.pickupOnly === true || undefined,
               location: str(f.location),
               auctionHouse: str(f.auctionHouse),
               endDate: str(f.endDate),
@@ -133,6 +145,11 @@ export function payloadDirectFields(
     description: appendQuantity(f?.description, f?.quantity),
     currentPrice: f?.currentPrice,
     buyerFeePct: f?.buyerFeePct,
+    platformFeePct: f?.platformFeePct,
+    // Sur devis : jamais 0 € — le champ reste vide et l'import avertit.
+    shippingCost: f?.shippingOnQuote ? undefined : f?.shippingCost,
+    shippingOnQuote: f?.shippingOnQuote,
+    pickupOnly: f?.pickupOnly,
     location: f?.location,
     auctionHouse: f?.auctionHouse,
     endDate: f?.endDate,

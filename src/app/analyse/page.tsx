@@ -10,6 +10,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AuctionForm } from "@/components/AuctionForm";
 import { ImportAssistant } from "@/components/ImportAssistant";
+import { takePendingDraft } from "@/lib/handoff";
 import { getAuction, type AuctionDraft, type AuctionRecord } from "@/lib/storage";
 
 export default function AnalysePage() {
@@ -30,6 +31,9 @@ function AnalyseContent() {
 
   useEffect(() => {
     if (editId) setRecord(getAuction(editId) ?? null);
+    // Brouillon transmis par une autre page (ex. 🃏 Lot de cartes).
+    const pending = takePendingDraft();
+    if (pending && !editId) setImported(pending);
     setReady(true);
   }, [editId]);
 

@@ -78,6 +78,45 @@ describe("retour terrain — listes numérotées et fausses correspondances", ()
   });
 });
 
+describe("dictionnaire FR → EN — les noms français matchent les cartes anglaises", () => {
+  it("traduit les noms sans racine commune", async () => {
+    const { translateFrName } = await import("../pokemon");
+    expect(translateFrName("plumeline")).toBe("oricorio");
+    expect(translateFrName("pingoleon")).toBe("empoleon");
+    expect(translateFrName("roitiflam")).toBe("emboar");
+    expect(translateFrName("dracaufeu")).toBe("charizard");
+    expect(translateFrName("pikachu")).toBeUndefined(); // identique : non stocké
+  });
+
+  it("« Plumeline ex 18/94 » reconnaît « Oricorio » dans les résultats", () => {
+    const r = toIdentified(
+      { raw: "Plumeline ex 18/94", name: "Plumeline ex", number: "18", printedTotal: 94 },
+      [apiCard("Machop", "18", 0.1), apiCard("Oricorio", "18", 4.5)]
+    );
+    expect(r.nameMismatch).toBeUndefined();
+    expect(r.card?.name).toBe("Oricorio");
+    expect(r.avgSell).toBe(4.5);
+  });
+
+  it("« Pingoléon ex 70/94 » reconnaît « Empoleon ex »", () => {
+    const r = toIdentified(
+      { raw: "Pingoléon ex 70/94", name: "Pingoléon ex", number: "70", printedTotal: 94 },
+      [apiCard("Empoleon ex", "70", 12)]
+    );
+    expect(r.nameMismatch).toBeUndefined();
+    expect(r.avgSell).toBe(12);
+  });
+
+  it("un nom introuvable même traduit reste honnêtement « non comptée »", () => {
+    const r = toIdentified(
+      { raw: "Plumeline ex 18/94", name: "Plumeline ex", number: "18", printedTotal: 94 },
+      [apiCard("Mega Turbo", "18", 0.19)]
+    );
+    expect(r.nameMismatch).toBe(true);
+    expect(r.avgSell).toBeUndefined();
+  });
+});
+
 describe("pickMatch — désambiguïsation par le nom", () => {
   it("le nom saisi tranche entre plusieurs correspondances", () => {
     const cards = [apiCard("Machop", "4"), apiCard("Charizard", "4")];

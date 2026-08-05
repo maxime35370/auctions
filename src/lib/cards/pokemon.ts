@@ -37,7 +37,8 @@ export function parseCardLines(text: string): {
   const queries: CardQuery[] = [];
   const invalid: string[] = [];
   for (const rawLine of text.split("\n")) {
-    const line = rawLine.trim();
+    // Retire un éventuel numéro de liste en tête (« 9 Plumeline ex 18/94 »).
+    const line = rawLine.trim().replace(/^\d{1,3}[.)]?\s+(?=\D)/, "");
     if (!line) continue;
     const m = line.match(/^(.*?)\s*(\d{1,3})\s*\/\s*(\d{1,3})\s*$/);
     if (!m) {
@@ -79,6 +80,13 @@ export interface IdentifiedCard {
   card: ApiCard | null;
   /** Nombre de correspondances (— la confiance baisse si ambigu). */
   matchCount: number;
+  /**
+   * Le nom saisi ne correspond à AUCUN résultat : probable collision de
+   * numéro avec une autre extension (l'API — anglophone — ne connaît pas les
+   * noms français, et couvre mal les extensions très récentes).
+   * La carte est affichée pour vérification mais EXCLUE du total.
+   */
+  nameMismatch?: boolean;
   /** Prix moyen de vente Cardmarket, en €. */
   avgSell?: number;
   trend?: number;
@@ -90,26 +98,55 @@ export function buildSearchUrl(q: CardQuery): string {
   return `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(query)}&pageSize=10&orderBy=-set.releaseDate`;
 }
 
-/** Choisit la meilleure correspondance (le nom saisi aide à trancher). */
-export function pickMatch(q: CardQuery, cards: ApiCard[]): { card: ApiCard | null; matchCount: number } {
-  if (cards.length === 0) return { card: null, matchCount: 0 };
+/** Normalisation pour comparer les noms : accents, tirets, casse, suffixes. */
+const normName = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\b(?:mega|ex|gx|v|vmax|vstar)\b/g, " ") // suffixes communs
+    .replace(/\s+/g, " ")
+    .trim();
+
+/**
+ * Choisit la meilleure correspondance.
+ * Si un nom est saisi et qu'AUCUN résultat n'y correspond, on ne prend
+ * JAMAIS silencieusement la première carte : probable collision de numéro
+ * (l'API est anglophone et couvre mal les extensions très récentes) —
+ * la carte est marquée « nom différent » et exclue du total.
+ */
+export function pickMatch(
+  q: CardQuery,
+  cards: ApiCard[]
+): { card: ApiCard | null; matchCount: number; nameMismatch: boolean } {
+  if (cards.length === 0) return { card: null, matchCount: 0, nameMismatch: false };
   if (q.name) {
-    const norm = (s: string) =>
-      s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const byName = cards.find((c) => norm(c.name).includes(norm(q.name!)));
-    if (byName) return { card: byName, matchCount: cards.length };
+    const wanted = normName(q.name);
+    if (wanted.length >= 3) {
+      const byName = cards.find((c) => {
+        const got = normName(c.name);
+        return got.includes(wanted) || wanted.includes(got);
+      });
+      if (byName)
+        return { card: byName, matchCount: cards.length, nameMismatch: false };
+      // Aucun nom ne correspond : on montre le candidat, on ne compte pas.
+      return { card: cards[0], matchCount: cards.length, nameMismatch: true };
+    }
   }
-  return { card: cards[0], matchCount: cards.length };
+  return { card: cards[0], matchCount: cards.length, nameMismatch: false };
 }
 
 export function toIdentified(q: CardQuery, cards: ApiCard[]): IdentifiedCard {
-  const { card, matchCount } = pickMatch(q, cards);
+  const { card, matchCount, nameMismatch } = pickMatch(q, cards);
   return {
     query: q,
     card,
     matchCount,
-    avgSell: card?.cardmarket?.prices?.averageSellPrice,
-    trend: card?.cardmarket?.prices?.trendPrice,
+    nameMismatch: nameMismatch || undefined,
+    // Une correspondance douteuse n'a pas de prix comptabilisable.
+    avgSell: nameMismatch ? undefined : card?.cardmarket?.prices?.averageSellPrice,
+    trend: nameMismatch ? undefined : card?.cardmarket?.prices?.trendPrice,
   };
 }
 
@@ -204,7 +241,8 @@ export function summarizeLot(
   const unreadable = Math.max(0, options.unreadableCount ?? 0);
   const prudentValue = Math.max(0, options.prudentValue ?? 0);
 
-  const identified = cards.filter((c) => c.card !== null);
+  // Les correspondances douteuses (nom différent) ne comptent JAMAIS.
+  const identified = cards.filter((c) => c.card !== null && !c.nameMismatch);
   const priced = identified.filter((c) => c.avgSell !== undefined);
   const provenValue = round(priced.reduce((s, c) => s + (c.avgSell ?? 0), 0));
   const prudentUnknownValue = round(unreadable * prudentValue);

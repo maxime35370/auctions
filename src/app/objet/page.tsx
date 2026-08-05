@@ -13,6 +13,7 @@ import {
   CATEGORIES,
   CATEGORY_LABELS,
   dataMaturity,
+  explainOpportunity,
   myVsMarket,
   opportunityZones,
   platformStats,
@@ -171,6 +172,27 @@ function ObjetContent() {
               <div className="text-xl font-bold">&gt; {euro(zones.fairPrice)}</div>
             </div>
           </div>
+          {(() => {
+            const reasons = explainOpportunity({
+              zones,
+              observations: active,
+              trendPct: stats.trendPct,
+              performance,
+              saleDelay,
+            });
+            return reasons.length > 0 ? (
+              <div className="mt-3 rounded-lg bg-surface p-3">
+                <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-1">
+                  Pourquoi ce seuil ?
+                </p>
+                <ul className="text-sm space-y-0.5">
+                  {reasons.map((r) => (
+                    <li key={r}>• {r}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null;
+          })()}
           <p className="text-[11px] text-muted mt-2">
             Percentiles 15 et 40 sur {zones.sampleSize} observation
             {zones.sampleSize > 1 ? "s" : ""} (
@@ -279,7 +301,7 @@ function ObjetContent() {
         <div className="rounded-xl border border-edge bg-surface p-4">
           <h2 className="text-sm font-semibold text-muted uppercase tracking-wide mb-3">
             📦 Comparateur de plateformes{" "}
-            <span className="normal-case font-normal">(mesuré sur tes observations)</span>
+            <span className="normal-case font-normal">(calculé sur tes observations)</span>
           </h2>
           <table className="w-full text-sm">
             <thead className="text-xs text-muted border-b border-edge">

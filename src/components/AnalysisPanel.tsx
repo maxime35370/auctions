@@ -47,7 +47,14 @@ function Money({ value }: { value: number }) {
   return <span className={cls}>{signedEuro(value)}</span>;
 }
 
-export function AnalysisPanel({ analysis }: { analysis: AuctionAnalysis }) {
+export function AnalysisPanel({
+  analysis,
+  confidence,
+}: {
+  analysis: AuctionAnalysis;
+  /** Confiance dans la recommandation (distincte du score de l'affaire). */
+  confidence?: { value: number; basis: string };
+}) {
   const a = analysis;
   const v = VERDICT_META[a.verdict];
 
@@ -64,6 +71,26 @@ export function AnalysisPanel({ analysis }: { analysis: AuctionAnalysis }) {
           />
         </div>
         <ScoreStars score={a.score} size="lg" />
+        {confidence && (
+          <div
+            className="text-sm pt-1"
+            title={`Le score note l'affaire ; la confiance mesure la solidité des données qui soutiennent la recommandation — ${confidence.basis}.`}
+          >
+            <span className="text-muted">Confiance dans la recommandation : </span>
+            <b
+              className={
+                confidence.value >= 70
+                  ? "text-positive"
+                  : confidence.value >= 40
+                    ? "text-accent"
+                    : "text-negative"
+              }
+            >
+              {confidence.value} %
+            </b>
+            <p className="text-[11px] text-muted mt-0.5">{confidence.basis}</p>
+          </div>
+        )}
       </div>
 
       {/* 🛑 Budget maximum */}

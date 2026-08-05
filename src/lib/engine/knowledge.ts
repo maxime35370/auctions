@@ -401,6 +401,73 @@ export function explainRecommendation(args: {
   return { positives, negatives };
 }
 
+/**
+ * Confiance dans la RECOMMANDATION — distincte du score de l'affaire.
+ * Un objet peut être excellent (score 92/100) avec des données très faibles
+ * (confiance 25 %), et inversement.
+ *
+ *  - Produit lié avec données : 80 % confiance des données produit
+ *    + 20 % complétude de la saisie ;
+ *  - Sans données produit : plafonnée à 40 % (estimations personnelles).
+ */
+export function recommendationConfidence(
+  inputCompleteness: number,
+  productConfidence?: number
+): { value: number; basis: string } {
+  if (productConfidence !== undefined) {
+    return {
+      value: Math.round(productConfidence * 0.8 + inputCompleteness * 0.2),
+      basis: "basée sur les observations réelles du produit",
+    };
+  }
+  return {
+    value: Math.round(Math.min(40, inputCompleteness * 0.4)),
+    basis:
+      "basée sur vos estimations uniquement — liez une fiche produit pour l'augmenter",
+  };
+}
+
+/**
+ * « Pourquoi ce prix d'opportunité ? » — l'explication en faits mesurés :
+ * part des ventes au-dessus du seuil, tendance, performance personnelle,
+ * délai moyen. L'application explique, l'utilisateur décide.
+ */
+export function explainOpportunity(args: {
+  zones: OpportunityZones;
+  observations: ObservationInput[];
+  trendPct?: number;
+  performance?: MyVsMarket;
+  saleDelay?: { avgDays: number; count: number };
+}): string[] {
+  const { zones, observations, trendPct, performance, saleDelay } = args;
+  const reasons: string[] = [];
+
+  const prices = observations.filter((o) => o.price > 0).map((o) => o.price);
+  if (prices.length > 0) {
+    const above = prices.filter((p) => p > zones.opportunityPrice).length;
+    reasons.push(
+      `${Math.round((above / prices.length) * 100)} % des prix observés sont au-dessus de ce seuil`
+    );
+  }
+  if (trendPct !== undefined) {
+    if (trendPct >= 3)
+      reasons.push(`Les prix montent (+${trendPct.toFixed(0)} % sur 6 mois)`);
+    else if (trendPct <= -3)
+      reasons.push(`Les prix baissent (${trendPct.toFixed(0)} % sur 6 mois) — prudence`);
+    else reasons.push("Prix stables sur les 6 derniers mois");
+  }
+  if (performance && Math.abs(performance.diffPct) >= 3) {
+    reasons.push(
+      performance.diffPct > 0
+        ? `Tu revends généralement ${performance.diffPct.toFixed(0)} % au-dessus de la médiane`
+        : `Tu revends généralement ${(-performance.diffPct).toFixed(0)} % sous la médiane — vise plus bas`
+    );
+  }
+  if (saleDelay) reasons.push(`Ton délai moyen de revente : ${saleDelay.avgDays} jours`);
+
+  return reasons;
+}
+
 // ---------------------------------------------------------------------------
 // Moteur statistique : prix d'opportunité, stabilité, mes performances
 // ---------------------------------------------------------------------------

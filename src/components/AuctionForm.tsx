@@ -22,6 +22,7 @@ import {
   myVsMarket,
   opportunityVerdict,
   opportunityZones,
+  recommendationConfidence,
   priceStability,
   CATEGORIES,
   CATEGORY_LABELS,
@@ -183,6 +184,16 @@ export function AuctionForm({
     () => analyzeAuction(values, knowledgeCtx),
     [values, knowledgeCtx]
   );
+
+  // Confiance dans la recommandation : distincte du score de l'affaire.
+  const confidence = useMemo(() => {
+    const completeness =
+      analysis.criteria.find((c) => c.key === "confiance")?.value ?? 0;
+    return recommendationConfidence(
+      completeness,
+      knownStats && knownStats.count > 0 ? knownStats.confidence : undefined
+    );
+  }, [analysis, knownStats]);
   const totalHours =
     values.refurbHours +
     values.cleaningHours +
@@ -367,7 +378,7 @@ export function AuctionForm({
                 recommendation.positives.length + recommendation.negatives.length > 0 && (
                   <div className="rounded-lg border border-edge bg-surface-2 p-3">
                     <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-1.5">
-                      Pourquoi ce conseil ? (faits mesurés)
+                      Pourquoi ce conseil ? (basé sur tes données réelles)
                     </p>
                     <ul className="text-sm space-y-1">
                       {recommendation.positives.map((r) => (
@@ -634,7 +645,7 @@ export function AuctionForm({
         <h2 className="text-sm font-semibold text-muted mb-3 uppercase tracking-wide">
           Analyse en direct
         </h2>
-        <AnalysisPanel analysis={analysis} />
+        <AnalysisPanel analysis={analysis} confidence={confidence} />
       </div>
     </div>
   );

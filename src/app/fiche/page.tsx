@@ -11,6 +11,8 @@ import {
   analyzeAuction,
   measuredPopularity,
   measuredProbabilities,
+  productStats,
+  recommendationConfidence,
   CATEGORY_LABELS,
   CONDITIONS,
   type Category,
@@ -68,9 +70,11 @@ function FicheContent() {
   // Graduation : si un produit est lié, ses données mesurées remplacent
   // les heuristiques (popularité réelle, probabilités réelles).
   let knowledgeCtx: KnowledgeContext | undefined;
+  let productConfidence: number | undefined;
   if (record.productId) {
     const obs = activeObservations(record.productId);
     if (obs.length > 0) {
+      productConfidence = productStats(obs).confidence;
       const pop = measuredPopularity(obs);
       const probs = measuredProbabilities(obs);
       knowledgeCtx = {};
@@ -89,6 +93,10 @@ function FicheContent() {
   }
 
   const analysis = analyzeAuction(record, knowledgeCtx);
+  const confidence = recommendationConfidence(
+    analysis.criteria.find((c) => c.key === "confiance")?.value ?? 0,
+    productConfidence
+  );
   const conditionLabel =
     CONDITIONS.find((c) => c.value === record.condition)?.label ??
     record.condition;
@@ -277,7 +285,7 @@ function FicheContent() {
         </div>
 
         {/* ------------------------- Analyse ----------------------------- */}
-        <AnalysisPanel analysis={analysis} />
+        <AnalysisPanel analysis={analysis} confidence={confidence} />
       </div>
     </div>
   );

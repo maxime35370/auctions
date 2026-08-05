@@ -88,7 +88,13 @@ function grabPage(mode) {
     fields.title = h1;
   const qty = (fields.title ?? document.title).match(/\blot de\s+(\d{1,3})\b/i);
   if (qty) fields.quantity = Number(qty[1]);
-  const cond = text.match(/[eé]tat\s*:?\s*(neuf|tr[eè]s bon(?: [eé]tat)?|bon(?: [eé]tat)?|occasion|moyen|pour pi[eè]ces|hs)/i);
+  // Grade du cartel (ADN Enchères…) prioritaire sur l'état générique.
+  const grade = text.match(
+    /\bgrade\s*:?\s{0,6}(parfaitement fonctionnel|partiellement fonctionnel|test d'?allumage|hors[- ]service|fonctionnel)/i
+  );
+  const cond =
+    grade ??
+    text.match(/[eé]tat\s*:?\s*(neuf|tr[eè]s bon(?: [eé]tat)?|bon(?: [eé]tat)?|occasion|moyen|pour pi[eè]ces|hs)/i);
   if (cond) fields.condition = cond[1];
   const og = document.querySelector('meta[property="og:description"], meta[name="description"]');
   if (og) fields.description = (og.getAttribute("content") ?? "").slice(0, 500);

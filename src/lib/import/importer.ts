@@ -169,10 +169,20 @@ function guessCategory(data: StandardAuctionData): string {
 
 function guessCondition(raw?: string): Condition {
   if (!raw) return "bon";
+  // Valeurs internes passées telles quelles (ex. depuis findGrade).
+  if (["neuf", "tres-bon", "bon", "moyen", "a-reparer", "epave"].includes(raw))
+    return raw as Condition;
+  // Grades des cartels de maisons de vente (ADN Enchères…).
+  if (/hors[- ]service/i.test(raw)) return "epave";
+  if (/partiellement fonctionnel|test d'?allumage/i.test(raw)) return "a-reparer";
+  if (/parfaitement fonctionnel/i.test(raw)) return "tres-bon";
+  // Vocabulaire classique.
   if (/neuf/i.test(raw)) return "neuf";
   if (/tr[eè]s bon/i.test(raw)) return "tres-bon";
-  if (/hs|panne|pi[eè]ce|[eé]pave|d[eé]faut/i.test(raw)) return "a-reparer";
+  if (/hs\b|panne|pour pi[eè]ces|[eé]pave/i.test(raw)) return "epave";
+  if (/pi[eè]ce|d[eé]faut|r[eé]parer/i.test(raw)) return "a-reparer";
   if (/moyen|us[eé]/i.test(raw)) return "moyen";
+  if (/\bfonctionnel\b/i.test(raw)) return "bon";
   return "bon";
 }
 

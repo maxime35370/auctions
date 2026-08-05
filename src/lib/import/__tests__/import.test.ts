@@ -147,6 +147,73 @@ describe("extractFromText — page Interencheres réaliste (menus, parasites)", 
   });
 });
 
+describe("cartels de maisons de vente — grades, origines, frais additionnels", () => {
+  // Reproduction du cartel ADN Enchères (Interencheres) : la légende CGV
+  // contient TOUS les grades — le piège classique.
+  const legende = `
+    Les grades de fonctionnement - Merci de lire les CGV
+    Parfaitement fonctionnel : Toutes les fonctions originales de l'appareil sont utilisables.
+    Fonctionnel : Toutes les fonctions originales de l'appareil sont utilisables. Une dégradation sérieuse de la batterie a été constatée.
+    Partiellement fonctionnel : Une ou plusieurs fonctions originales de l'appareil sont non fonctionnelles.
+    Test d'allumage : Un simple test d'allumage a été effectué par nos équipes (on/off).
+    Hors Service : L'appareil ne fonctionne pas.
+    Origines des lots - Merci de lire les CGV
+    Litige transport : Le produit n'a pu être délivré...
+    Retour Client : Ce produit acheté dans le (e-)commerce a fait l'objet d'un retour...
+    Retour SAV : Ce produit a été restitué pour un défaut de fonctionnement présumé.
+    Retour d'Entrepôt : Ce lot n'a jamais quitté son entrepôt d'origine...
+    Frais de la vente : 26% pour les ventes volontaires
+    Les frais Interencheres de 1,8% sont pris en charge par ADN Enchères si le bordereau est réglé en CB
+  `;
+
+  it("ne devine JAMAIS un grade quand seule la légende CGV est présente", async () => {
+    const { findGrade, findLotOrigin } = await import("../parse");
+    expect(findGrade(legende)).toBeUndefined();
+    expect(findLotOrigin(legende)).toBeUndefined();
+  });
+
+  it("détecte le grade étiqueté du lot, même avec la légende complète", async () => {
+    const { findGrade } = await import("../parse");
+    const page = `Appareil photo Lumix DMC-G7\nGrade : Test d'allumage\n${legende}`;
+    const g = findGrade(page)!;
+    expect(g.label).toBe("Test d'allumage");
+    expect(g.condition).toBe("a-reparer");
+    expect(g.warning).toContain("allumage");
+  });
+
+  it("détecte un grade unique sans étiquette", async () => {
+    const { findGrade } = await import("../parse");
+    const g = findGrade("Console de mixage vendue hors service, pour pièces")!;
+    expect(g.condition).toBe("epave");
+  });
+
+  it("détecte l'origine étiquetée et son avertissement", async () => {
+    const { findLotOrigin } = await import("../parse");
+    const o = findLotOrigin(`Origine : Retour SAV\n${legende}`)!;
+    expect(o.label).toBe("Retour SAV");
+    expect(o.warning).toContain("défaut");
+  });
+
+  it("extractFromText : frais 26 %, note +1,8 %, grade → état et commentaires", () => {
+    const page = `Lot n° 12\nLot de 2 appareils photo Lumix DMC-G7\nEnchère en cours\n85,00 €\nGrade : Hors Service\nOrigine : Retour SAV\n${legende}`;
+    const d = extractFromText(page);
+    expect(d.buyerFeePct).toBe(26);
+    expect(d.rawCondition).toBe("epave");
+    expect(d.description).toContain("Hors service");
+    expect(d.description).toContain("Retour SAV");
+    expect(d.description).toContain("+1,8 %");
+    expect(d.currentPrice).toBe(85);
+  });
+
+  it("guessCondition mappe les grades vers les états internes", async () => {
+    const { toDraft } = await import("../importer");
+    expect(toDraft({ rawCondition: "a-reparer" }).condition).toBe("a-reparer");
+    expect(toDraft({ rawCondition: "Hors service" }).condition).toBe("epave");
+    expect(toDraft({ rawCondition: "test d'allumage" }).condition).toBe("a-reparer");
+    expect(toDraft({ rawCondition: "parfaitement fonctionnel" }).condition).toBe("tres-bon");
+  });
+});
+
 describe("registry — détection du connecteur", () => {
   it("choisit le bon connecteur selon l'URL", () => {
     expect(detectConnector("demo:ender3").id).toBe("demo");
@@ -174,13 +241,13 @@ describe("importer — conversion en brouillon", () => {
     expect(draft.endDate).toBe("2026-08-12");
   });
 
-  it("devine la catégorie informatique et l'état à réparer", () => {
+  it("devine la catégorie informatique et l'état épave pour du HS", () => {
     const draft = toDraft({
       title: "Lot imprimantes 3D en panne",
       rawCondition: "HS pour pièces",
     });
     expect(draft.category).toBe("informatique");
-    expect(draft.condition).toBe("a-reparer");
+    expect(draft.condition).toBe("epave");
   });
 
   it("applique des défauts sûrs quand tout manque", () => {

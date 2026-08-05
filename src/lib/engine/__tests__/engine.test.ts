@@ -35,6 +35,29 @@ describe("computeCosts — coût total réel", () => {
     expect(costs.vat).toBe(72);
     expect(costs.totalCost).toBe(462);
   });
+
+  it("la facture complète : marteau + acheteur + plateforme + livraison = 399 €", () => {
+    const costs = computeCosts({
+      ...baseInput,
+      currentPrice: 300,
+      buyerFeePct: 24,
+      platformFeePct: 1.8,
+      travelCost: 0,
+      shippingCost: 21.6,
+    });
+    expect(costs.buyerFee).toBe(72); // 💼 300 × 24 %
+    expect(costs.platformFee).toBe(5.4); // 🌐 300 × 1,8 %
+    expect(costs.shippingCost).toBe(21.6); // 📦
+    expect(costs.totalCost).toBe(399); // 💰
+  });
+
+  it("le budget max reste exact avec les frais plateforme", () => {
+    const input = { ...baseInput, platformFeePct: 1.8 };
+    const maxBid = computeMaxBudget(input);
+    const atMax = analyzeAuction({ ...input, currentPrice: maxBid });
+    expect(atMax.roi).toBeGreaterThan(29.5);
+    expect(atMax.roi).toBeLessThan(30.5);
+  });
 });
 
 describe("computeMaxBudget — budget maximal conseillé", () => {
@@ -128,6 +151,58 @@ describe("analyzeAuction — analyse complète", () => {
     expect(Number.isFinite(a.totalCost)).toBe(true);
     expect(Number.isFinite(a.roi)).toBe(true);
     expect(Number.isFinite(a.score)).toBe(true);
+  });
+});
+
+describe("origine du lot — pénalités mécaniques", () => {
+  it("« Retour client » : risque pénalisé, budget max réduit de 15 %", () => {
+    const clean = analyzeAuction(baseInput);
+    const risky = analyzeAuction({ ...baseInput, lotOrigin: "retour-client" });
+
+    const riskClean = clean.criteria.find((c) => c.key === "risque")!.value;
+    const riskRisky = risky.criteria.find((c) => c.key === "risque")!.value;
+    expect(riskRisky).toBe(riskClean - 18); // +18 de risque
+
+    expect(risky.maxBudget).toBeCloseTo(clean.maxBudget * 0.85, 1); // −15 %
+    expect(risky.explanation.negatives.join(" ")).toContain("Retour client");
+    expect(risky.score).toBeLessThan(clean.score);
+  });
+
+  it("« Retour SAV » : le plus pénalisé (budget −25 %)", () => {
+    const clean = analyzeAuction(baseInput);
+    const sav = analyzeAuction({ ...baseInput, lotOrigin: "retour-sav" });
+    expect(sav.maxBudget).toBeCloseTo(clean.maxBudget * 0.75, 1);
+  });
+
+  it("la confiance de recommandation baisse avec l'origine (−12 retour client)", async () => {
+    const { recommendationConfidence } = await import("../knowledge");
+    const base = recommendationConfidence(100, 90);
+    const penalized = recommendationConfidence(100, 90, 12);
+    expect(penalized.value).toBe(base.value - 12);
+    expect(penalized.basis).toContain("origine du lot risquée");
+  });
+});
+
+describe("⏱ bénéfice par heure investie", () => {
+  it("100 € en 2 h vaut mieux que 30 € en 15 h — et l'analyse le montre", () => {
+    const quick = analyzeAuction({
+      ...baseInput,
+      refurbHours: 1,
+      cleaningHours: 0.5,
+      photoHours: 0.25,
+      listingHours: 0.25,
+    });
+    // bénéfice normal 260 € / 2 h = 130 €/h
+    expect(quick.totalTimeHours).toBe(2);
+    expect(quick.hourlyProfit).toBe(130);
+
+    const slow = analyzeAuction({ ...baseInput, refurbHours: 15 });
+    expect(slow.hourlyProfit).toBeLessThan(quick.hourlyProfit!);
+  });
+
+  it("pas de division par zéro sans temps saisi", () => {
+    const a = analyzeAuction({ ...baseInput, refurbHours: 0 });
+    expect(a.hourlyProfit).toBeUndefined();
   });
 });
 

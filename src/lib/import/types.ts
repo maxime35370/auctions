@@ -18,8 +18,14 @@ export interface StandardAuctionData {
   currentPrice?: number;
   /** Frais acheteur, en % (si trouvés). */
   buyerFeePct?: number;
-  /** Coût de livraison, en € (si trouvé). */
+  /** Frais de plateforme (Interencheres, Live…), en % (si trouvés). */
+  platformFeePct?: number;
+  /** Coût de livraison France, en € (si trouvé). */
   shippingCost?: number;
+  /** Livraison « sur devis » / « nous contacter » : coût inconnu, jamais 0. */
+  shippingOnQuote?: boolean;
+  /** Retrait sur place uniquement. */
+  pickupOnly?: boolean;
   location?: string;
   /** Maison de vente / vendeur. */
   auctionHouse?: string;
@@ -27,6 +33,8 @@ export interface StandardAuctionData {
   endDate?: string;
   /** État brut annoncé (« occasion », « neuf », « pour pièces »…). */
   rawCondition?: string;
+  /** Origine du lot détectée (slug : retour-client, retour-sav…). */
+  lotOrigin?: string;
   /** URL d'origine. */
   sourceUrl?: string;
 }

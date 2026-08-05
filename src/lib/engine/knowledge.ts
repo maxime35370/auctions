@@ -412,16 +412,24 @@ export function explainRecommendation(args: {
  */
 export function recommendationConfidence(
   inputCompleteness: number,
-  productConfidence?: number
+  productConfidence?: number,
+  /** Pénalité liée à l'origine du lot (retour client −12, SAV −18…). */
+  originPenalty = 0
 ): { value: number; basis: string } {
+  const applyPenalty = (v: number) => Math.max(5, v - originPenalty);
   if (productConfidence !== undefined) {
     return {
-      value: Math.round(productConfidence * 0.8 + inputCompleteness * 0.2),
-      basis: "basée sur les observations réelles du produit",
+      value: applyPenalty(
+        Math.round(productConfidence * 0.8 + inputCompleteness * 0.2)
+      ),
+      basis:
+        originPenalty > 0
+          ? `basée sur les observations réelles du produit (−${originPenalty} pts : origine du lot risquée)`
+          : "basée sur les observations réelles du produit",
     };
   }
   return {
-    value: Math.round(Math.min(40, inputCompleteness * 0.4)),
+    value: applyPenalty(Math.round(Math.min(40, inputCompleteness * 0.4))),
     basis:
       "basée sur vos estimations uniquement — liez une fiche produit pour l'augmenter",
   };

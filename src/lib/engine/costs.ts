@@ -3,8 +3,11 @@
  *
  * Règles métier :
  *  - Frais acheteur  = prix marteau × buyerFeePct %
+ *  - Frais plateforme = prix marteau × platformFeePct % (Interencheres, Live…)
  *  - TVA             = (prix marteau + frais acheteur) × vatPct %
- *  - Coût total réel = prix marteau + frais + TVA + déplacement + livraison
+ *  - Coût total réel = marteau + frais acheteur + frais plateforme + TVA
+ *                      + déplacement + livraison
+ *    Ex. facture : 300 + 72 (24 %) + 5,40 (1,8 %) + 21,60 livraison = 399 €
  *  - Bénéfice net    = prix de revente − coût total réel
  *  - ROI             = bénéfice net / coût total réel
  *  - Budget max      = prix marteau maximal qui préserve encore le ROI cible
@@ -13,6 +16,7 @@
  *                      photos, annonce, emballage, SAV)
  */
 
+import { lotOriginMeta } from "./advice";
 import { SCENARIO_META } from "./strategy";
 import type {
   AuctionInput,
@@ -26,22 +30,38 @@ export const TARGET_ROI = 0.3;
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-/** Multiplicateur frais + TVA appliqué au prix marteau. */
-function feeMultiplier(input: Pick<AuctionInput, "buyerFeePct" | "vatPct">): number {
-  return (1 + input.buyerFeePct / 100) * (1 + input.vatPct / 100);
+/**
+ * Multiplicateur appliqué au prix marteau :
+ * (1 + frais acheteur)(1 + TVA) + frais plateforme
+ * (la TVA porte sur marteau + frais acheteur ; les frais plateforme sont TTC).
+ */
+function feeMultiplier(
+  input: Pick<AuctionInput, "buyerFeePct" | "vatPct" | "platformFeePct">
+): number {
+  return (
+    (1 + input.buyerFeePct / 100) * (1 + input.vatPct / 100) +
+    input.platformFeePct / 100
+  );
 }
 
-/** Décompose le coût total réel d'une enchère. */
+/** Décompose le coût total réel d'une enchère — façon facture. */
 export function computeCosts(input: AuctionInput) {
   const hammerPrice = input.currentPrice;
   const buyerFee = hammerPrice * (input.buyerFeePct / 100);
+  const platformFee = hammerPrice * (input.platformFeePct / 100);
   const vat = (hammerPrice + buyerFee) * (input.vatPct / 100);
   const totalCost =
-    hammerPrice + buyerFee + vat + input.travelCost + input.shippingCost;
+    hammerPrice +
+    buyerFee +
+    platformFee +
+    vat +
+    input.travelCost +
+    input.shippingCost;
 
   return {
     hammerPrice: round2(hammerPrice),
     buyerFee: round2(buyerFee),
+    platformFee: round2(platformFee),
     vat: round2(vat),
     travelCost: round2(input.travelCost),
     shippingCost: round2(input.shippingCost),
@@ -63,7 +83,10 @@ export function computeMaxBudget(input: AuctionInput, targetRoi = TARGET_ROI): n
   const fixedCosts = input.travelCost + input.shippingCost;
   const maxTotalCost = input.resaleNormal / (1 + targetRoi);
   const maxBid = (maxTotalCost - fixedCosts) / feeMultiplier(input);
-  return round2(Math.max(0, maxBid));
+  // Origine risquée (retour client, SAV…) → plafond mécaniquement réduit :
+  // ce genre de lot n'est intéressant qu'à bas prix.
+  const reduction = lotOriginMeta(input.lotOrigin)?.budgetReductionPct ?? 0;
+  return round2(Math.max(0, maxBid * (1 - reduction / 100)));
 }
 
 /**

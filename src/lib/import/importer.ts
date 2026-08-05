@@ -102,6 +102,36 @@ export async function importFromExtension(
   });
   const merged = mergeData(payloadDirectFields(payload), data);
 
+  // 📦 Livraison : information critique — toujours annoncée explicitement.
+  if (merged.shippingOnQuote) {
+    report({
+      icon: "⚠️",
+      label:
+        "Livraison inconnue (sur devis / nous contacter) — coût NON inclus, à renseigner",
+      status: "warn",
+    });
+  } else if (merged.shippingCost !== undefined) {
+    report({
+      icon: "📦",
+      label: `Livraison trouvée : ${merged.shippingCost} € — ajoutée au coût réel`,
+      status: "ok",
+    });
+  }
+  if (merged.pickupOnly) {
+    report({
+      icon: "🚗",
+      label: "Retrait sur place uniquement — pensez au coût de déplacement",
+      status: "warn",
+    });
+  }
+  if (merged.platformFeePct !== undefined) {
+    report({
+      icon: "🌐",
+      label: `Frais plateforme trouvés : ${merged.platformFeePct} % — inclus au calcul`,
+      status: "ok",
+    });
+  }
+
   report({
     icon: fieldsFound >= 3 ? "🎉" : "⚠️",
     label: `${fieldsFound} champ(s) extrait(s) — vérifiez et complétez avant d'enregistrer`,
@@ -200,7 +230,9 @@ export function toDraft(data: StandardAuctionData): Partial<AuctionDraft> {
     photos: data.photos ?? [],
     currentPrice: data.currentPrice ?? 0,
     buyerFeePct: data.buyerFeePct ?? 20,
+    platformFeePct: data.platformFeePct ?? 0,
     shippingCost: data.shippingCost ?? 0,
     condition: guessCondition(data.rawCondition),
+    lotOrigin: data.lotOrigin ?? "",
   };
 }

@@ -155,7 +155,15 @@ export function AnalysisPanel({
           label="Gain réel (normal)"
           value={<Money value={a.netProfit} />}
         />
-        <KeyFigure label="Temps total estimé" value={hours(a.totalTimeHours)} />
+        <KeyFigure
+          label="⏱ Temps total estimé"
+          value={hours(a.totalTimeHours)}
+          hint={
+            a.hourlyProfit !== undefined
+              ? `soit ${a.hourlyProfit} €/heure investie`
+              : undefined
+          }
+        />
       </div>
 
       {/* Détail du coût */}
@@ -164,11 +172,16 @@ export function AnalysisPanel({
           Décomposition du coût
         </h3>
         <dl className="text-sm space-y-1.5">
-          <CostRow label="Prix marteau" value={a.costBreakdown.hammerPrice} />
-          <CostRow label="Frais acheteur" value={a.costBreakdown.buyerFee} />
-          <CostRow label="TVA" value={a.costBreakdown.vat} />
-          <CostRow label="Déplacement" value={a.costBreakdown.travelCost} />
-          <CostRow label="Livraison" value={a.costBreakdown.shippingCost} />
+          <CostRow label="🪓 Prix marteau" value={a.costBreakdown.hammerPrice} />
+          <CostRow label="💼 Frais acheteur" value={a.costBreakdown.buyerFee} />
+          {a.costBreakdown.platformFee > 0 && (
+            <CostRow label="🌐 Frais plateforme" value={a.costBreakdown.platformFee} />
+          )}
+          {a.costBreakdown.vat > 0 && (
+            <CostRow label="TVA" value={a.costBreakdown.vat} />
+          )}
+          <CostRow label="🚗 Déplacement" value={a.costBreakdown.travelCost} />
+          <CostRow label="📦 Livraison" value={a.costBreakdown.shippingCost} />
           <div className="flex justify-between border-t border-edge pt-1.5 font-semibold">
             <dt>Total</dt>
             <dd>{euro(a.totalCost)}</dd>
@@ -293,14 +306,17 @@ export function AnalysisPanel({
 function KeyFigure({
   label,
   value,
+  hint,
 }: {
   label: string;
   value: React.ReactNode;
+  hint?: string;
 }) {
   return (
     <div className="rounded-xl border border-edge bg-surface p-3">
       <div className="text-xs text-muted">{label}</div>
       <div className="text-lg font-bold">{value}</div>
+      {hint && <div className="text-[10px] text-muted mt-0.5">{hint}</div>}
     </div>
   );
 }

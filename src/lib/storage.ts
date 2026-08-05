@@ -219,6 +219,7 @@ const recordSchema = z.object({
     .catch("analysee"),
   currentPrice: num(),
   buyerFeePct: num(100),
+  platformFeePct: num(100),
   vatPct: num(100),
   travelCost: num(),
   shippingCost: num(),
@@ -228,6 +229,7 @@ const recordSchema = z.object({
   condition: z
     .enum(["neuf", "tres-bon", "bon", "moyen", "a-reparer", "epave"])
     .catch("bon"),
+  lotOrigin: z.string().catch(""),
   refurbHours: num(),
   cleaningHours: num(),
   photoHours: num(),

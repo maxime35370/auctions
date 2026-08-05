@@ -75,6 +75,8 @@ export interface AuctionInput extends TimeBreakdown {
   currentPrice: number;
   /** Frais acheteur, en % du prix marteau. */
   buyerFeePct: number;
+  /** Frais de plateforme (Interencheres 1,8 %, frais Live…), en % du marteau. */
+  platformFeePct: number;
   /** TVA, en % — appliquée sur (prix marteau + frais acheteur). */
   vatPct: number;
   /** Coût estimé du déplacement, en €. */
@@ -83,6 +85,8 @@ export interface AuctionInput extends TimeBreakdown {
   shippingCost: number;
   condition: Condition;
   category: string;
+  /** Origine du lot (cartel maison de vente) : "" = inconnue/aucune. */
+  lotOrigin: string;
   /** Gain minimum en dessous duquel l'opération ne vaut pas le déplacement, en €. */
   minProfitTarget: number;
   /** Commission de la plateforme de revente, en % du prix de vente. */
@@ -182,6 +186,7 @@ export interface AuctionAnalysis {
   costBreakdown: {
     hammerPrice: number;
     buyerFee: number;
+    platformFee: number;
     vat: number;
     travelCost: number;
     shippingCost: number;
@@ -197,6 +202,8 @@ export interface AuctionAnalysis {
   scenarios: ResaleScenario[];
   /** Temps total estimé (somme de la décomposition), en heures. */
   totalTimeHours: number;
+  /** ⏱ Bénéfice réel par heure investie (scénario normal), €/h. */
+  hourlyProfit?: number;
   /** Le meilleur gain atteint-il le gain minimum visé ? */
   meetsMinProfit: boolean;
   /** Stratégie recommandée. */

@@ -42,6 +42,62 @@ export function explainScore(criteria: ScoreCriterion[]): ScoreExplanation {
 }
 
 // ---------------------------------------------------------------------------
+// Origines des lots — pénalités MÉCANIQUES appliquées à l'analyse
+// (détectées par l'import, ajustables dans le formulaire)
+// ---------------------------------------------------------------------------
+
+export interface LotOriginMeta {
+  value: string;
+  label: string;
+  /** Points ajoutés au risque (retranchés du critère « risque maîtrisé »). */
+  riskPenalty: number;
+  /** Réduction du budget maximal conseillé, en %. */
+  budgetReductionPct: number;
+  /** Points retranchés de la confiance dans la recommandation. */
+  confidencePenalty: number;
+  note: string;
+}
+
+export const LOT_ORIGINS: LotOriginMeta[] = [
+  {
+    value: "retour-entrepot",
+    label: "Retour d'entrepôt",
+    riskPenalty: 8,
+    budgetReductionPct: 5,
+    confidencePenalty: 4,
+    note: "jamais utilisé, mais défaut de stockage possible",
+  },
+  {
+    value: "litige-transport",
+    label: "Litige transport",
+    riskPenalty: 15,
+    budgetReductionPct: 15,
+    confidencePenalty: 10,
+    note: "avarie possible, aucune garantie sur l'état",
+  },
+  {
+    value: "retour-client",
+    label: "Retour client",
+    riskPenalty: 18,
+    budgetReductionPct: 15,
+    confidencePenalty: 12,
+    note: "retourné après usage, aucune garantie sur l'état ni le fonctionnement",
+  },
+  {
+    value: "retour-sav",
+    label: "Retour SAV",
+    riskPenalty: 30,
+    budgetReductionPct: 25,
+    confidencePenalty: 18,
+    note: "défaut de fonctionnement présumé — le lot n'est intéressant qu'à très bas prix",
+  },
+];
+
+export function lotOriginMeta(value: string): LotOriginMeta | undefined {
+  return LOT_ORIGINS.find((o) => o.value === value);
+}
+
+// ---------------------------------------------------------------------------
 // Plateformes de revente conseillées par catégorie
 // ---------------------------------------------------------------------------
 

@@ -8,7 +8,12 @@
  * « presse-papiers » reste la voie fiable.
  */
 
-import { findAuctionHouse, findLocation, findPriceNear } from "../parse";
+import {
+  findAuctionHouse,
+  findLocation,
+  findPriceNear,
+  PRICE_KEYWORDS,
+} from "../parse";
 import { extractGeneric, mergeData } from "./generic";
 import {
   countFields,
@@ -34,9 +39,7 @@ export const interencheresConnector: Connector = {
     const specific: Partial<StandardAuctionData> = {
       auctionHouse: findAuctionHouse(text) ?? "Interencheres",
       location: findLocation(text),
-      currentPrice: findPriceNear(text, [
-        "ench[eè]re en cours", "derni[eè]re ench[eè]re", "mise [aà] prix",
-      ]),
+      currentPrice: findPriceNear(text, PRICE_KEYWORDS),
     };
 
     const generic = extractGeneric(html, ctx.url || undefined, ctx.report);

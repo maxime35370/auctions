@@ -93,6 +93,60 @@ describe("extractFromText — mode presse-papiers", () => {
   });
 });
 
+describe("extractFromText — page Interencheres réaliste (menus, parasites)", () => {
+  const realisticPage = `
+    Interencheres
+    Se connecter
+    Mes listes
+    Rechercher un objet, une vente, une maison de ventes...
+    Toutes les catégories
+    MOBILIER & OBJETS D'ART
+    MATÉRIEL PROFESSIONNEL
+    Comment acheter ?
+    Vente courante de matériel informatique et audiovisuel
+    mercredi 20 août 2026 à 14:00
+    SVV Atlantique Ouest Enchères
+    Lot n° 42
+    Lot de 3 NAS Synology DS920+ avec disques durs
+    Enchère en cours
+    210,00 €
+    Frais de vente : 24,66 % TTC en sus
+    Clôture le 20 août 2026
+    Retrait : 35000 Rennes
+    Voir plus de lots
+    Newsletter
+    Mentions légales
+    CGV
+  `;
+
+  it("trouve le prix même sur une ligne séparée du libellé", () => {
+    const d = extractFromText(realisticPage);
+    expect(d.currentPrice).toBe(210);
+  });
+
+  it("ancre le titre près du prix (pas les menus ni le nom de la vente)", () => {
+    const d = extractFromText(realisticPage);
+    expect(d.title).toBe("Lot de 3 NAS Synology DS920+ avec disques durs");
+  });
+
+  it("trouve frais décimaux, date de clôture, localisation et maison de vente", () => {
+    const d = extractFromText(realisticPage);
+    expect(d.buyerFeePct).toBe(24.66);
+    expect(d.endDate).toBe("2026-08-20");
+    expect(d.location).toBe("Rennes (35)");
+    expect(d.auctionHouse).toContain("Ench");
+  });
+
+  it("gère « montant avant libellé » et « commission »", () => {
+    const d = extractFromText(
+      "Objectif Canon EF 50mm f/1.8 STM comme neuf\n180,00 €\nDernière enchère\nCommission : 20 % HT"
+    );
+    expect(d.currentPrice).toBe(180);
+    expect(d.buyerFeePct).toBe(20);
+    expect(d.title).toContain("Canon EF 50mm");
+  });
+});
+
 describe("registry — détection du connecteur", () => {
   it("choisit le bon connecteur selon l'URL", () => {
     expect(detectConnector("demo:ender3").id).toBe("demo");

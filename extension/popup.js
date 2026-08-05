@@ -28,11 +28,13 @@ function grabPage(mode) {
     const n = Number(cleaned);
     return Number.isFinite(n) ? n : undefined;
   };
+  const PRICE = "(\\d[\\d\\s\\u00a0\\u202f.,]*)\\s*€";
   const priceNear = (text, keywords) => {
     for (const kw of keywords) {
-      const m = text.match(
-        new RegExp(kw + "[^0-9€]{0,40}?(\\d[\\d\\s\\u00a0\\u202f.,]*)\\s*€", "i")
-      );
+      // libellé … montant (fenêtre large, traverse les sauts de ligne)
+      let m = text.match(new RegExp(kw + "[^0-9€]{0,90}?" + PRICE, "i"));
+      // montant … libellé (les pages affichent souvent le prix d'abord)
+      if (!m) m = text.match(new RegExp(PRICE + "[^0-9€]{0,60}?" + kw, "i"));
       if (m) {
         const n = num(m[1]);
         if (n !== undefined && n > 0) return n;
@@ -61,9 +63,11 @@ function grabPage(mode) {
   const fields = {};
   fields.currentPrice = priceNear(text, [
     "ench[eè]re en cours", "ench[eè]re actuelle", "derni[eè]re ench[eè]re",
-    "prix actuel", "mise [aà] prix", "estimation",
+    "offre actuelle", "derni[eè]re offre", "montant de l'ench[eè]re",
+    "prix actuel", "adjug[eé]", "mise [aà] prix", "prix de d[eé]part",
+    "estimation",
   ]);
-  const fee = text.match(/frais[^%]{0,60}?(\d{1,2}(?:[.,]\d{1,2})?)\s*%/i);
+  const fee = text.match(/(?:frais|commission)[^%]{0,80}?(\d{1,2}(?:[.,]\d{1,2})?)\s*%/i);
   if (fee) {
     const n = num(fee[1]);
     if (n !== undefined && n > 0 && n <= 50) fields.buyerFeePct = n;
@@ -75,7 +79,13 @@ function grabPage(mode) {
   const loc = text.match(/\b(\d{5})\s+([A-ZÀ-Ÿ][A-Za-zà-ÿ' -]{2,30}?)(?=[\n,.]|$)/m);
   if (loc) fields.location = `${loc[2].trim()} (${loc[1].slice(0, 2)})`;
   const h1 = document.querySelector("h1")?.textContent?.trim();
-  if (h1 && h1.length >= 8 && h1.length <= 160) fields.title = h1;
+  if (
+    h1 &&
+    h1.length >= 8 &&
+    h1.length <= 160 &&
+    !/interencheres|agorastore|ench[eè]res|se connecter|recherche/i.test(h1)
+  )
+    fields.title = h1;
   const qty = (fields.title ?? document.title).match(/\blot de\s+(\d{1,3})\b/i);
   if (qty) fields.quantity = Number(qty[1]);
   const cond = text.match(/[eé]tat\s*:?\s*(neuf|tr[eè]s bon(?: [eé]tat)?|bon(?: [eé]tat)?|occasion|moyen|pour pi[eè]ces|hs)/i);

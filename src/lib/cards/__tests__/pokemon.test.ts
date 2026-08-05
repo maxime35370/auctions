@@ -42,6 +42,42 @@ describe("buildSearchUrl", () => {
   });
 });
 
+describe("retour terrain — listes numérotées et fausses correspondances", () => {
+  it("retire les numéros de liste en tête (« 9 Plumeline ex 18/94 »)", () => {
+    const { queries } = parseCardLines(
+      "9 Plumeline ex 18/94\n10 Pingoléon ex 70/94\n11 Méga-Absol ex 86/112"
+    );
+    expect(queries[0]).toMatchObject({ name: "Plumeline ex", number: "18" });
+    expect(queries[1]).toMatchObject({ name: "Pingoléon ex", number: "70" });
+    expect(queries[2]).toMatchObject({ name: "Méga-Absol ex", number: "86" });
+  });
+
+  it("« Méga-Absol ex » ≠ « Mega Turbo » : jamais de fausse correspondance silencieuse", () => {
+    // Le cas réel : numéro 86/112 → l'API renvoie « Mega Turbo » (Roaring
+    // Skies) car l'extension récente est absente de la base.
+    const r = toIdentified(
+      { raw: "Méga-Absol ex 86/112", name: "Méga-Absol ex", number: "86", printedTotal: 112 },
+      [apiCard("Mega Turbo", "86", 0.19, "Roaring Skies")]
+    );
+    expect(r.nameMismatch).toBe(true);
+    expect(r.avgSell).toBeUndefined(); // exclue du total
+    const s = summarizeLot([r]);
+    expect(s.totalValue).toBe(0);
+    expect(s.identified).toBe(0);
+  });
+
+  it("« Méga-Absol ex » (FR) correspond bien à « Mega Absol ex » (EN)", () => {
+    // Accents, tirets et suffixes normalisés : même racine → match.
+    const r = toIdentified(
+      { raw: "Méga-Absol ex 12/112", name: "Méga-Absol ex", number: "12", printedTotal: 112 },
+      [apiCard("Mega Turbo", "86", 0.19), apiCard("Mega Absol ex", "12", 35)]
+    );
+    expect(r.nameMismatch).toBeUndefined();
+    expect(r.card?.name).toBe("Mega Absol ex");
+    expect(r.avgSell).toBe(35);
+  });
+});
+
 describe("pickMatch — désambiguïsation par le nom", () => {
   it("le nom saisi tranche entre plusieurs correspondances", () => {
     const cards = [apiCard("Machop", "4"), apiCard("Charizard", "4")];

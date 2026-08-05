@@ -118,8 +118,11 @@ export default function CartesPage() {
         <p className="text-sm text-muted mt-1">
           Saisissez les numéros visibles sur les photos (une carte par ligne).
           L&apos;estimation est <b>volontairement prudente</b> : les cartes
-          illisibles valent leur valeur plancher, jamais plus. L&apos;OCR
-          automatique des photos viendra ensuite.
+          illisibles valent leur valeur plancher, jamais plus. ⚠ La base de
+          prix est <b>anglophone</b> et couvre mal les extensions très
+          récentes (2024+) : ces cartes ressortent « non identifiées » —
+          comptez-les dans l&apos;estimation prudente. L&apos;OCR des photos
+          viendra ensuite.
         </p>
       </div>
 
@@ -273,7 +276,19 @@ export default function CartesPage() {
                       <span className="w-10 text-center text-muted">🃏</span>
                     )}
                     <div className="flex-1 min-w-0">
-                      {c.card ? (
+                      {c.card && c.nameMismatch ? (
+                        <>
+                          <p className="font-medium text-negative truncate">
+                            ⚠ « {c.query.raw} » — nom différent, non comptée
+                          </p>
+                          <p className="text-xs text-muted truncate">
+                            Trouvé « {c.card.name} » ({c.card.set?.name}) au même
+                            numéro : probable extension récente absente de la
+                            base. Utilisez l&apos;estimation prudente pour
+                            cette carte.
+                          </p>
+                        </>
+                      ) : c.card ? (
                         <>
                           <p className="font-medium truncate">
                             {c.card.name}{" "}
@@ -289,7 +304,9 @@ export default function CartesPage() {
                         </>
                       ) : (
                         <p className="text-muted">
-                          ❓ « {c.query.raw} » non identifiée
+                          ❓ « {c.query.raw} » non identifiée (extension récente
+                          ou numéro inhabituel) — comptez-la en estimation
+                          prudente
                         </p>
                       )}
                     </div>
